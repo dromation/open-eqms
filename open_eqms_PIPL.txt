@@ -1,0 +1,31 @@
+Privacy is an important consideration for Open EQMS, and we are committed to complying with the Personal Information Protection Law (PIPL) of the People's Republic of China. This statement outlines our privacy practices and explains how we collect, use, and protect personal information.
+
+Collection and Use of Personal Information:
+Open EQMS collects personal information for the following purposes:
+
+To enable users to access and use the software system.
+To provide technical support and assistance to users.
+To communicate with users regarding updates, changes, or improvements to the software.
+To improve the software and its features.
+The types of personal information that we may collect include:
+
+Name, address, phone number, and email address
+Login credentials, such as username and password
+IP address and browser type
+Information related to the use of the software
+We will only collect personal information for the purposes outlined above, and we will not use the information for any other purpose without the user's consent.
+
+Protection of Personal Information:
+We are committed to protecting the personal information of our users and have implemented appropriate technical and organizational measures to safeguard against unauthorized access, use, modification, or disclosure of personal information.
+
+Disclosure of Personal Information:
+We will not disclose personal information to any third party unless required by law, or unless we have obtained the user's consent. If we do disclose personal information, we will take appropriate measures to ensure that the information is protected and used only for the purpose for which it was disclosed.
+
+Access and Correction of Personal Information:
+Users have the right to access and correct their personal information that we hold. If you wish to access or correct your personal information, please contact us at [contact information].
+
+Changes to this Privacy Statement:
+We may update this privacy statement from time to time to reflect changes to our privacy practices or for other operational, legal, or regulatory reasons. We will post any updates on our website and, if the changes are significant, we will notify users via email or other means.
+
+Contact Us:
+If you have any questions or concerns about our privacy practices or this statement, please contact us at [contact information].

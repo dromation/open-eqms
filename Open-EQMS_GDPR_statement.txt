@@ -1,0 +1,11 @@
+At Open-EQMS, we take the privacy and security of our users' data seriously. We are committed to complying with the General Data Protection Regulation (GDPR), which is designed to protect the personal data of EU citizens.
+
+When using Open-EQMS, you may provide us with personal data such as your name, email address, or other contact information. We use this data solely for the purpose of providing you with access to our software system and to communicate with you regarding updates and improvements to the system. We do not sell, rent, or share your personal data with any third parties.
+
+We take all necessary measures to protect your personal data and prevent unauthorized access, use, or disclosure. We maintain administrative, technical, and physical safeguards to ensure the confidentiality, integrity, and availability of your data.
+
+Under the GDPR, you have the right to access, rectify, or erase your personal data at any time. If you wish to exercise these rights, please contact us at [contact information]. We will respond to your request within one month.
+
+By using Open-EQMS, you agree to the terms of this GDPR statement and our privacy policy. We may update this statement and our privacy policy from time to time, and we will notify you of any changes.
+
+Thank you for using Open-EQMS, and we appreciate your trust in our software system.

@@ -1,0 +1,11 @@
+CCPA Statement for Open EQMS
+
+The California Consumer Privacy Act (CCPA) grants certain rights to California residents with respect to their personal information. As the developers of Open EQMS, we are committed to respecting the privacy and data protection rights of our users, including those in California.
+
+Under CCPA, California residents have the right to know what personal information is being collected about them, the right to request that their personal information be deleted, and the right to opt-out of the sale of their personal information. Open EQMS does not sell any personal information and has implemented reasonable measures to secure and protect the personal information of its users.
+
+If you are a California resident and would like to exercise your CCPA rights or have any questions or concerns regarding our data protection practices, please contact us at [insert contact information]. We will respond to your request within the time frame required by law.
+
+Please note that Open EQMS may collect certain personal information from California residents, such as name, email address, and IP address, as part of our normal business operations. This information is collected for the purpose of providing and improving our software system and will only be used as described in our Privacy Policy.
+
+Thank you for using Open EQMS.

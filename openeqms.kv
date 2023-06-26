@@ -1,0 +1,1122 @@
+
+
+MDBoxLayout:
+    toolbar: menubar
+    screen_manager: sm
+    size: root.width, root.height
+    orientation: "vertical"
+    #pos_hint: {'center_x': 0.0, 'center_y': 0.0}
+    #adaptive_height: True
+    #md_bg_color: app.theme_cls.primary_color
+    #MDBoxLayout:
+        #orientation: "horizontal"
+        #size_hint: 1, 0.1
+        #pos_hint: {"center_x": .5, "center_y": 0.9}
+
+    MDBoxLayout:
+        id: menubar
+        pos_hint: {'center_x': .5}
+        adaptive_height: True
+        #adaptive_width: True
+        halign: "top"
+        
+        #size_hint_x: 1
+        mb_bg_color: app.theme_cls.primary_color
+        MDIconButton:
+            adaptive_height: True
+            adaptive_width: True
+            icon: "home"
+            md_bg_color: menubar.md_bg_color
+            on_release: sm.current = 'HOME'
+
+        MDIconButton:
+            adaptive_height: True
+            adaptive_width: True
+            id: apps
+            icon: "cogs"
+            md_bg_color: menubar.md_bg_color
+            on_release: sm.current = 'APPLICATIONS'
+
+
+        MDIconButton:
+            adaptive_height: True
+            adaptive_width: True
+            icon: "form-select"
+            md_bg_color: menubar.md_bg_color
+            on_release: sm.current = 'Product'
+
+        MDIconButton:
+            adaptive_height: True
+            adaptive_width: True
+            icon: "drawing-box"
+            md_bg_color: menubar.md_bg_color
+            on_release: sm.current = 'Drawing'
+        
+        MDIconButton:
+            adaptive_height: True
+            adaptive_width: True
+            icon: "note-check"
+            md_bg_color: menubar.md_bg_color
+            on_release: sm.current = 'Casecheck'
+        
+        MDIconButton:
+            adaptive_height: True
+            adaptive_width: True
+            icon: "information"
+            md_bg_color: menubar.md_bg_color
+            on_release: sm.current = 'INFO'
+        
+        MDIconButton:
+            id: colorp
+            icon: "palette-advanced"
+            text: "COLORS"
+            md_bg_color: menubar.md_bg_color
+            on_release: app.open_color_picker()
+        
+        MDIconButton:
+            id: dater
+            icon: "calendar-range"
+            text: "DATE"
+            md_bg_color: menubar.md_bg_color
+            on_release: app.app_calendar()
+
+        MDIconButton:
+            id: timer
+            icon: "clock-outline"
+            text: "TIME"
+            md_bg_color: menubar.md_bg_color
+            on_release: app.app_timer()
+
+    ScreenManager:
+        id: sm
+        size_hint: 1, 1
+        pos_hint: {"center_x": 0.5, "center_y": 0.5}
+        transition: 
+        MDScreen:
+            id: HOME
+            name: "HOME"
+            spacing: "12dp"
+            MDLabel:
+                pos_hint: {'center_x': 0.5, 'center_y': 0.5}
+                size_hint: 0.5, 0.8
+                text: "Wellcome to the Open EQMS Demo! This app is a dev version ... something, it has an AI based on text input learning.\n\n\n Please feel free to explore..."
+            
+
+
+        MDScreen:
+            id: applications
+            name: "APPLICATIONS"
+            #MDBottomAppBar:
+             #   md_bg_color: app.theme_cls.primary_color
+              #  MDTopAppBar:
+               #     left_action_items: [["menu", lambda x: app.presser()]]
+                #    title: "SECTIONS"
+                    #mode: "free-end"
+                    #mode: 'end'
+                    #mode: 'center'
+                    #mode: 'free-center'
+                 #   md_bg_color: app.theme_cls.primary_color
+                  #  on_action_button: app.presser()
+            MDBanner:
+                pos_hint_y: 0.0
+            MDGridLayout:
+                rows: 1
+                cols: 7
+                pos_hint: {"center_x": 0.5, "center_y": 0.5}
+                adaptive_height: True
+                adaptive_width: True
+                spacing: dp(12)
+                padding: dp(24)
+                
+                MDCard:
+                    id: openpjm
+                    padding: dp(10)
+                    spacing: dp(12)
+                    size_hint: None, None
+                    size: "200dp", "700dp"
+                    orientation: 'vertical'
+                    adaptive_height: True
+                    adaptive_width: True
+                    #md_bg_color: "lightgrey"
+                    #focus_color: "grey"
+                    #pos_hint: {'center_x': .5, 'center_y': .9}
+                    MDLabel:
+                        text: "PROJECT MANAGEMENT"
+                        halign: "auto"
+                        adaptive_height: True
+                    MDGridLayout:
+                        cols: 3
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            icon: "information"
+                            md_bg_color: menubar.md_bg_color
+                            on_release: app.koko_open()
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-pjm/icons/icons8-agile-64.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-pjm/icons/icons8-accounting-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-pjm/icons/icons8-badge-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-pjm/icons/icons8-business-report-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-pjm/icons/icons8-combo-chart-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-pjm/icons/icons8-training-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-pjm/icons/icons8-flow-chart-64.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-pjm/icons/icons8-gannt-60.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-pjm/icons/icons8-tasks-64.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-pjm/icons/icons8-time-management-64.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-pjm/icons/icons8-milestones-60.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-pjm/icons/icons8-cost-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-pjm/icons/icons8-legal-60.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-pjm/icons/icons8-staff-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-pjm/icons/icons8-compliance-50.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-pjm/icons/icons8-flag-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+
+
+                MDCard:
+                    id: openqms
+                    padding: dp(10)
+                    spacing: dp(12)
+                    size_hint: None, None
+                    size: "200dp", "700dp"
+                    orientation: 'vertical'
+                    adaptive_height: True
+                    adaptive_width: True
+                    #md_bg_color: "lightgrey"
+                    #focus_color: "grey"
+                    #pos_hint: {'center_x': .5, 'center_y': .9}
+                    MDLabel:
+                        text: "QUALITY MANAGEMENT"
+                        halign: "auto"
+                        adaptive_height: True
+                    MDGridLayout:
+                        cols: 3
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            icon: "information"
+                            md_bg_color: menubar.md_bg_color
+                            on_release: app.koko_open()
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-iso-symbol-64.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-sigma-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-legal-60.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-accounting-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-area-chart-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-rules-book-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-procurement-64.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-inspection-64.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-test-passed-64.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-test-results-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-validation-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-laboratory-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-measurement-64.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-micrometer-50.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-statistics-report-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-certification-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-agile-64.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-vision-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-not-applicable-48.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-qms/icons/icons8-iso-64.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+
+                MDCard:
+                    id: opendes
+                    padding: dp(10)
+                    spacing: dp(12)
+                    size_hint: None, None
+                    size: "200dp", "700dp"
+                    orientation: 'vertical'
+                    adaptive_height: True
+                    adaptive_width: True
+                    #md_bg_color: "lightgrey"
+                    #focus_color: "grey"
+                    #pos_hint: {'center_x': .5, 'center_y': .9}
+                    MDLabel:
+                        text: "DESIGN MANAGEMENT"
+                        halign: "auto"
+                        adaptive_height: True
+                    MDGridLayout:
+                        cols: 2
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            icon: "information"
+                            md_bg_color: menubar.md_bg_color
+                            on_release: app.koko_open()
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-des/icons/icons8-agile-64.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-des/icons/icons8-compliance-100.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-des/icons/icons8-image-96.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-des/icons/icons8-dwg-96.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-des/icons/icons8-cad-64.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-des/icons/icons8-blueprint-96.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-des/icons/icons8-materials-64.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-des/icons/icons8-learn-60.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-des/icons/icons8-flipboard-96.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-des/icons/icons8-engineering-64.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-des/icons/icons8-measurement-64.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-des/icons/icons8-test-96.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+                        MDIconButton:
+                            adaptive_height: True
+                            adaptive_width: True
+                            mb_bg_color: app.theme_cls.primary_color
+                            size: "48dp", "48dp"
+                            on_release: app.koko_open()
+                            Image:
+                                source: 'open-des/icons/icons8-add-graph-report-96.png'
+                                center_x: self.parent.center_x
+                                center_y: self.parent.center_y
+
+                MDCard:
+                    id: openenm
+                    padding: dp(10)
+                    spacing: dp(12)
+                    size_hint: None, None
+                    size: "200dp", "700dp"
+                    orientation: 'vertical'
+                    adaptive_height: True
+                    adaptive_width: True
+                    #md_bg_color: "lightgrey"
+                    #focus_color: "grey"
+                    #pos_hint: {'center_x': .5, 'center_y': .9}
+                    MDLabel:
+                        text: "ENGINEERING MANAGEMENT"
+                        halign: "auto"
+                        adaptive_height: True
+                    MDIconButton:
+                        adaptive_height: True
+                        adaptive_width: True
+                        icon: "information"
+                        md_bg_color: menubar.md_bg_color
+                        on_release: app.koko_open()
+
+                MDCard:
+                    id: openlog
+                    padding: dp(10)
+                    spacing: dp(12)
+                    size_hint: None, None
+                    size: "200dp", "700dp"
+                    orientation: 'vertical'
+                    adaptive_height: True
+                    adaptive_width: True
+                    #md_bg_color: "lightgrey"
+                    #focus_color: "grey"
+                    #pos_hint: {'center_x': .5, 'center_y': .9}
+                    MDLabel:
+                        text: "LOGISTICS MANAGEMENT"
+                        halign: "auto"
+                        adaptive_height: True
+                    MDIconButton:
+                        adaptive_height: True
+                        adaptive_width: True
+                        icon: "information"
+                        md_bg_color: menubar.md_bg_color
+                        on_release: app.koko_open()
+
+                MDCard:
+                    id: openmarkt
+                    padding: dp(10)
+                    spacing: dp(12)
+                    size_hint: None, None
+                    size: "200dp", "700dp"
+                    orientation: 'vertical'
+                    adaptive_height: True
+                    adaptive_width: True
+                    #md_bg_color: "lightgrey"
+                    #focus_color: "grey"
+                    #pos_hint: {'center_x': .5, 'center_y': .9}
+                    MDLabel:
+                        text: "MARKETING MANAGEMENT"
+                        halign: "auto"
+                        adaptive_height: True
+                    MDIconButton:
+                        adaptive_height: True
+                        adaptive_width: True
+                        icon: "information"
+                        md_bg_color: menubar.md_bg_color
+                        on_release: app.koko_open()
+
+                MDCard:
+                    id: opensup
+                    padding: dp(10)
+                    spacing: dp(12)
+                    size_hint: None, None
+                    size: "200dp", "700dp"
+                    orientation: 'vertical'
+                    adaptive_height: True
+                    adaptive_width: True
+                    #md_bg_color: "lightgrey"
+                    #focus_color: "grey"
+                    #pos_hint: {'center_x': .5, 'center_y': .9}
+                    MDLabel:
+                        text: "SUPPLY MANAGEMENT"
+                        halign: "center"
+                        adaptive_height: True
+                    MDIconButton:
+                        adaptive_height: True
+                        adaptive_width: True
+                        icon: "information"
+                        md_bg_color: menubar.md_bg_color
+                        on_release: app.koko_open()
+
+        MDScreen:
+            id: Product
+            name: "Product"
+            
+            MDBoxLayout:
+                orientation: 'vertical'
+                pos_hint: {"center_x": .5, "center_y": 0.5}
+                spacing: "12dp"
+                MDBoxLayout:
+                    orientation: 'horizontal'
+                    pos_hint: {"center_x": .5, "center_y": 1}
+                    size_hint_x: 0.8
+                    size_hint_y: 0.1
+                    spacing: "12dp"    
+                    MDTextField:
+                        name: "PROJECT NAME"
+                        hint_text: "Project name"
+                        size_hint_x: 0.1
+                        pos_hint: {"center_x": .3}
+                    MDTextField:
+                        name: "PRODUCT NAME"
+                        hint_text: "Product name"
+                        size_hint_x: 0.1
+                        pos_hint: {"center_x": .5}
+                    MDTextField:
+                        name: "DATE"
+                        hint_text: "Date"
+                        size_hint_x: 0.05
+                        pos_hint: {"center_x": .7}
+                        validator: 'date'
+                        date_format: "dd/mm/yyyy"
+
+                MDBoxLayout:
+                    orientation: 'vertical'
+                    pos_hint: {"center_x": .5, "center_y": 0.5}
+                    spacing: "12dp"    
+                    size_hint_y: 0.8
+                    size_hint_x: 0.8
+
+                    MDTextField:
+                        name: "PRODUCT DESCRIPTION"
+                        hint_text: "Product description"
+                        multiline: True
+                        mode: "rectangle"
+                        size_hint_x: 0.8
+                        size_hint_y: 0.4
+                        pos_hint: {"center_x": .3}
+                  
+                    
+                    MDBoxLayout:
+                        orientation: 'horizontal'
+                        pos_hint:{"center_x": 0.5, "center_y": 0.2}
+                        spacing: "12dp"
+                        size_hint_y: 0.1
+                        MDRaisedButton:
+                            text: "Save description"
+                            pos_hint:{"center_x": 0.3, "center_y": 0.6}
+
+                        MDRaisedButton:
+                            text: "Load description"
+                            pos_hint:{"center_x": 0.5, "center_y": 0.6}
+                        MDRaisedButton:
+                            text: "LEARN"
+                            pos_hint:{"center_x": 0.7, "center_y": 0.6}
+                        MDRaisedButton:
+                            text: "SCIKIT METHOD"
+                            pos_hint:{"center_x": 0.7, "center_y": 0.6}
+
+                        MDRaisedButton:
+                            text: "TENSOR METHOD"
+                            pos_hint:{"center_x": 0.7, "center_y": 0.6}
+
+        MDScreen:
+            id: Drawing
+            name: "Drawing"
+            MDBoxLayout:
+                orientation: 'vertical'
+                #MDTopAppBar:
+                  #  title: "AI FORMER"
+                 #   left_action_items: [["menu"]]
+                   # right_action_items: [["dots-vertical"]]
+                    #md_bg_color: menubar.md_bg_color
+
+                MDLabel:
+                    id: drawings
+                    text: "Please, input or drag'n'drop the drawing or sketch file in this area, so our AI can generate technical description."
+                    halign: "center"
+
+                MDBottomAppBar:
+                    md_bg_color: menubar.md_bg_color
+                    MDTopAppBar:
+                        icon: 'git'
+                        left_action_items: [["menu", lambda x: app.presser()]]
+                        title: "AI OPTIONS"
+                        type: "bottom"
+                        #mode: "free-end"
+                        mode: 'end'
+                        #mode: 'center'
+                        #mode: 'free-center'
+                        md_bg_color: menubar.md_bg_color
+                        on_action_button: app.presser()
+
+        MDScreen:
+            id: Casecheck
+            name: "Casecheck"
+           
+            MDTopAppBar:
+                icon: 'git'
+                left_action_items: [["menu", lambda x: app.presser()]]
+                title: "MACHINE LEARNING OPTIONS"
+                type: "bottom"
+                #mode: "free-end"
+                mode: 'end'
+                #mode: 'center'
+                #mode: 'free-center'
+                md_bg_color: menubar.md_bg_color
+            MDLabel:
+                text: "With switch button on, you will automate the processes of each department, resulting in auto-generated project documentation and market analysis.. "
+                waligh: 'center'
+            GridLayout:
+                rows: 4
+                cols: 3
+                #orientation: 'vertical'
+                pos_hint: {"center_x": .5, "center_y": 0.5}
+                adaptive_height: True
+                adaptive_width: True
+                padding: "24dp"
+                spacing: "24dp"
+                #DBoxLayout:
+                #    orient: 'horizontal'
+                 #   size_hint_y: 0.1
+                  #  pos_hint:{"center_x": 0.5, "center_y": 0.8}
+                MDCard:
+                    padding: 4
+                    size_hint: None, None
+                    size: "400dp", "100dp"
+                    md_bg_color: "lightgrey"
+                    focus_color: "grey"
+                    pos_hint: {'center_x': .5, 'center_y': .9}
+                    MDLabel:
+                        text: "PRODUCT CONTENTS"
+                        halign: "center"
+                        adaptive_width: True
+
+                    MDSwitch:
+                        pos_hint: {'center_x': .7, 'center_y': .5}
+                        icon_active: "check"
+                        icon_active_color: "green"
+                        icon_inactive: "close"
+                        icon_inactive_color: "grey"
+                MDCard:
+                    padding: 4
+                    size_hint: None, None
+                    size: "400dp", "100dp"
+                    md_bg_color: "lightgrey"
+                    focus_color: "grey"
+                    pos_hint: {'center_x': .5, 'center_y': .9}
+                    MDLabel:
+                        text: "QUALITY CONTENTS"
+                        halign: "center"
+                        adaptive_width: True
+
+                    MDSwitch:
+                        pos_hint: {'center_x': .7, 'center_y': .5}
+                        icon_active: "check"
+                        icon_active_color: "green"
+                        icon_inactive: "close"
+                        icon_inactive_color: "grey"
+
+                MDCard:
+                    padding: 4
+                    size_hint: None, None
+                    size: "400dp", "100dp"
+                    md_bg_color: "lightgrey"
+                    focus_color: "grey"
+                    pos_hint: {'center_x': .5, 'center_y': .9}
+                    MDLabel:
+                        text: "QUALITY CONTENTS"
+                        halign: "center"
+                        adaptive_width: True
+
+                    MDSwitch:
+                        pos_hint: {'center_x': .7, 'center_y': .5}
+                        icon_active: "check"
+                        icon_active_color: "green"
+                        icon_inactive: "close"
+                        icon_inactive_color: "grey"
+
+                MDCard:
+                    padding: 4
+                    size_hint: None, None
+                    size: "400dp", "100dp"
+                    md_bg_color: "lightgrey"
+                    focus_color: "grey"
+                    pos_hint: {'center_x': .5, 'center_y': .9}
+                    MDLabel:
+                        text: "DESIGN CONTENTS"
+                        halign: "center"
+                        adaptive_width: True
+
+                    MDSwitch:
+                        pos_hint: {'center_x': .7, 'center_y': .5}
+                        icon_active: "check"
+                        icon_active_color: "green"
+                        icon_inactive: "close"
+                        icon_inactive_color: "grey"
+                
+                MDCard:
+                    padding: 4
+                    size_hint: None, None
+                    size: "400dp", "100dp"
+                    md_bg_color: "lightgrey"
+                    focus_color: "grey"
+                    pos_hint: {'center_x': .5, 'center_y': .9}
+                    MDLabel:
+                        text: "ENGINEERING CONTENTS"
+                        halign: "center"
+                        adaptive_width: True
+
+                    MDSwitch:
+                        pos_hint: {'center_x': .7, 'center_y': .5}
+                        icon_active: "check"
+                        icon_active_color: "green"
+                        icon_inactive: "close"
+                        icon_inactive_color: "grey"
+
+                MDCard:
+                    padding: 4
+                    size_hint: None, None
+                    size: "400dp", "100dp"
+                    md_bg_color: "lightgrey"
+                    focus_color: "grey"
+                    pos_hint: {'center_x': .5, 'center_y': .9}
+                    MDLabel:
+                        text: "SUPPLY CONTENTS"
+                        halign: "center"
+                        adaptive_width: True
+
+                    MDSwitch:
+                        pos_hint: {'center_x': .7, 'center_y': .5}
+                        icon_active: "check"
+                        icon_active_color: "green"
+                        icon_inactive: "close"
+                        icon_inactive_color: "grey"
+
+                MDCard:
+                    padding: 4
+                    size_hint: None, None
+                    size: "400dp", "100dp"
+                    md_bg_color: "lightgrey"
+                    focus_color: "grey"
+                    pos_hint: {'center_x': .5, 'center_y': .9}
+                    MDLabel:
+                        text: "MARKETING CONTENTS"
+                        halign: "center"
+                        adaptive_width: True
+
+                    MDSwitch:
+                        pos_hint: {'center_x': .7, 'center_y': .5}
+                        icon_active: "check"
+                        icon_active_color: "green"
+                        icon_inactive: "close"
+                        icon_inactive_color: "grey"
+
+                MDCard:
+                    padding: 4
+                    size_hint: None, None
+                    size: "400dp", "100dp"
+                    md_bg_color: "lightgrey"
+                    focus_color: "grey"
+                    pos_hint: {'center_x': .5, 'center_y': .9}
+                    MDLabel:
+                        text: "PROCUREMENT CONTENTS"
+                        halign: "center"
+                        adaptive_width: True
+
+                    MDSwitch:
+                        pos_hint: {'center_x': .7, 'center_y': .5}
+                        icon_active: "check"
+                        icon_active_color: "green"
+                        icon_inactive: "close"
+                        icon_inactive_color: "grey"
+                
+                MDCard:
+                    padding: 4
+                    size_hint: None, None
+                    size: "400dp", "100dp"
+                    md_bg_color: "lightgrey"
+                    focus_color: "grey"
+                    pos_hint: {'center_x': .5, 'center_y': .9}
+                    MDLabel:
+                        text: "LOGISTICS CONTENTS"
+                        halign: "center"
+                        adaptive_width: True
+
+                    MDSwitch:
+                        pos_hint: {'center_x': .7, 'center_y': .5}
+                        icon_active: "check"
+                        icon_active_color: "green"
+                        icon_inactive: "close"
+                        icon_inactive_color: "grey"
+
+        MDScreen:
+            id: INFO
+            name: "INFO"
+            MDTopAppBar:
+                #icon: 'git'
+                left_action_items: [["menu", lambda x: app.presser()]]
+                title: "info"
+                #type: "bottom"
+                #mode: "free-end"
+                mode: 'end'
+                #mode: 'center'
+                #mode: 'free-center'
+                md_bg_color: menubar.md_bg_color
+            MDBoxLayout:
+                pos_hint: {"center_x": .5, "center_y": 0.5}
+            
+                orientation: 'vertical'
+                MDLabel:
+                    size_hint_y: 0.05
+                    pos_hint_y: 0.9
+                    text: "Slide to see product compliances."
+            
+                
+                Carousel:
+
+                    MDLabel:
+                        size_hint_x: 0.9
+                        size_hint_y: 0.9
+                        pos_hint: {"center_x": .5, "center_y": 0.5}
+                        text: "Product Compliance Statement - Open Enterprise Quality Management System (Open-EQMS) \n\nOpen-EQMS is a software system designed to help organizations manage and improve their quality management processes. The system is designed to comply with relevant industry standards and regulations, including ISO 9001. \nOpen-EQMS is an open-source project that is continually being developed and improved by a community of contributors. \nThe software is distributed under the terms of the MIT License, which grants users the right to use, copy, modify, and distribute the software, subject to certain conditions. \nAs an open-source project, Open-EQMS is distributed on an \n as-is basis, without any warranties or guarantees of any kind. The developers and contributors of the software disclaim any liability for any damages or losses that may arise from the use or distribution of the software. \nOpen-EQMS is designed to be customizable and flexible, allowing organizations to tailor the system to their specific needs and requirements. The software is designed to be user-friendly, with an intuitive interface and a range of features to support quality management processes, including document management, corrective and preventive actions, and audit management.\nOpen-EQMS is compatible with a range of operating systems and can be installed on-premises or hosted in the cloud. The software is designed to be scalable, supporting organizations of all sizes, from small businesses to large enterprises. \n\nIf you have any questions or concerns about the compliance of Open-EQMS, please feel free to contact us. We are committed to maintaining the highest standards of quality and compliance in our software."

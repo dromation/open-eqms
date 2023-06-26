@@ -1,0 +1,16 @@
+Product Compliance Statement - Open Enterprise Quality Management System (Open-EQMS)
+
+Open-EQMS is a software system designed to help organizations manage and improve their quality management processes. The system is designed to comply with relevant industry standards and regulations, including ISO 9001.
+
+Open-EQMS is an open-source project that is continually being developed and improved by a community of contributors. The software is distributed under the terms of the MIT License, which grants users the right to use, copy, modify, and distribute the software, subject to certain conditions.
+
+As an open-source project, Open-EQMS is distributed on an "as-is" basis, without any warranties or guarantees of any kind. The developers and contributors of the software disclaim any liability for any damages or losses that may arise from the use or distribution of the software.
+
+Open-EQMS is designed to be customizable and flexible, allowing organizations to tailor the system to their specific needs and requirements. The software is designed to be user-friendly, with an intuitive interface and a range of features to support quality management processes, including document management, corrective and preventive actions, and audit management.
+
+Open-EQMS is compatible with a range of operating systems and can be installed on-premises or hosted in the cloud. The software is designed to be scalable, supporting organizations of all sizes, from small businesses to large enterprises.
+
+If you have any questions or concerns about the compliance of Open-EQMS, please feel free to contact us. We are committed to maintaining the highest standards of quality and compliance in our software.
+
+
+

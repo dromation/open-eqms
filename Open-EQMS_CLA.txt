@@ -1,0 +1,23 @@
+Contributor License Agreement (CLA) for Open Source Enterprise Quality Management System (Open-EQMS)
+
+Thank you for your interest in contributing to the Open Source Enterprise Quality Management System (Open-EQMS) project. In order to ensure that the contributions made to the project are properly licensed and that the project can be distributed under an open-source license, we require contributors to sign the following Contributor License Agreement ("CLA").
+
+This CLA applies to any contribution you make to the Open-EQMS project, whether in the form of code, documentation, bug reports, or any other materials.
+
+By signing this CLA, you grant to the Open-EQMS project and its contributors a perpetual, worldwide, non-exclusive, royalty-free, irrevocable license to reproduce, prepare derivative works of, publicly display, publicly perform, sublicense, and distribute your contribution and any derivatives thereof, in whole or in part, under any open-source license that the Open-EQMS project chooses to use.
+
+You represent and warrant that you have the legal right and authority to enter into this CLA and to grant the above license. You further represent and warrant that your contribution does not infringe any third-party intellectual property rights, and that you have not granted any conflicting licenses or permissions that would interfere with the rights granted in this CLA.
+
+If you are submitting contributions on behalf of a company, organization, or other legal entity, you represent and warrant that you have the authority to enter into this CLA on behalf of that entity and to grant the above license with respect to the contributions.
+
+By signing this CLA, you agree to indemnify, defend, and hold harmless the Open-EQMS project, its contributors, and its affiliates from and against any and all claims, damages, liabilities, costs, and expenses (including reasonable attorneys' fees) arising from or relating to your contribution, including any claims of infringement of third-party intellectual property rights.
+
+If you do not agree to the terms of this CLA, you may not make any contributions to the Open-EQMS project.
+
+Please sign below to indicate your agreement to the terms of this CLA and to certify that you have the legal right and authority to grant the above license with respect to your contributions.
+
+Name: ____________________________
+
+Signature: _________________________
+
+Date: _______________________________
