@@ -1,0 +1,75 @@
+body {
+    font-family: Arial, sans-serif;
+    background-color: rgb(255, 255, 255); /* Transparent background */
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+}
+
+.topappbar {
+    width: 100%;
+    background-color: #ffffff;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+.menu-icon img {
+    width: 96px;
+    cursor: pointer;
+}
+
+.submenu {
+    display: flex;
+    align-items: center;
+}
+
+.submenu-icon img {
+    width: 48px;
+    margin-left: 24px;
+    cursor: pointer;
+}
+
+.logo img {
+    width: 96px;
+    cursor: pointer;
+}
+
+.main-layout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    margin-top: 80px;
+    justify-content: center;
+    align-items: center;
+}
+
+.icon-button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: transparent;
+    border: none;
+    cursor: pointer;
+}
+
+.icon-button img {
+    width: 180px;
+    height: 180px;
+}
+
+.icon-button span {
+    margin-top: 24px;
+    color: #fff;
+    font-weight: bold;
+    font-size: 96px;
+}

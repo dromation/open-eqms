@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open EQMS Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</head>
+<body>
+    <!-- Top App Bar -->
+    <div class="topappbar">
+        <div class="menu-icon" onclick="toggleMenu()">
+            <img src="{{ url_for('static', filename='images/menu.png') }}" alt="Menu">
+        </div>
+        <div class="submenu">
+            <div class="submenu-icon">
+                <img src="{{ url_for('static', filename='images/commands.png') }}" alt="Commands" onclick="showCommands()">
+            </div>
+            <div class="submenu-icon">
+                <img src="{{ url_for('static', filename='images/settings.png') }}" alt="Settings" onclick="showSettings()">
+            </div>
+            <div class="submenu-icon">
+                <img src="{{ url_for('static', filename='images/info.png') }}" alt="Info" onclick="showInfo()">
+            </div>
+        </div>
+        <div class="logo">
+            <img src="{{ url_for('static', filename='images/oeqms_logo.png') }}" alt="Open EQMS">
+        </div>
+    </div>
+
+    <!-- Main Layout -->
+    <div class="main-layout">
+        <div class="icon-button" onclick="launchApp('apqp')">
+            <img src="{{ url_for('static', filename='images/APQP_logo.png') }}" alt="APQP">
+            <span>APQP</span>
+        </div>
+        <div class="icon-button" onclick="launchApp('fmea')">
+            <img src="{{ url_for('static', filename='images/OFMEA_logo.png') }}" alt="FMEA">
+            <span>FMEA</span>
+        </div>
+        <!-- Add more icons here for MSA, PPAP, etc. -->
+        <div class="icon-button" onclick="launchApp('msa')">
+            <img src="{{ url_for('static', filename='images/MSA_logo.png') }}" alt="MSA">
+            <span>MSA</span>
+        </div>
+        <div class="icon-button" onclick="launchApp('ppap')">
+            <img src="{{ url_for('static', filename='images/PPAP_logo.png') }}" alt="PPAP">
+            <span>PPAP</span>
+        </div>
+        <!-- Add more icons as needed -->
+    </div>
+</body>
+</html>

@@ -1,0 +1,8 @@
+Flask
+SQLAlchemy
+Flask-Migrate
+Flask-SQLAlchemy
+Tkinter
+Kivy
+KivyMD
+pandas
