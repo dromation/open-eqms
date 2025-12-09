@@ -3,10 +3,10 @@
 This branch (main-new) contains the v03 snapshot of the Open EQMS UI shell. It includes a Flask entrypoint, static assets, and placeholder packages for future apps (FMEA, etc.). Core service modules are stubs to be filled in.
 
 ## What's here?
-- pp.py: Flask app with routes for / and /launch/<app_name>, renders 	emplates/index.html.
+- app.py: Flask app with routes for / and /launch/<app_name>, renders 	emplates/index.html.
 - static/: CSS/JS plus image and logo assets (renamed to short, git-friendly filenames).
 - 	emplates/index.html: Simple dashboard UI referencing the static assets.
-- pps/, eqms/: Package stubs with zero-length modules ready for implementation.
+- apps/, eqms/: Package stubs with zero-length modules ready for implementation.
 
 ## Quick start
 1) Create and activate a virtualenv.
