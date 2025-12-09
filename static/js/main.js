@@ -19,7 +19,19 @@ function showInfo() {
     alert('Info menu clicked');
 }
 
-function launchApp(appName) {
-    // Logic to launch the specific app
-    alert(`Launching ${appName} app`);
+async function launchApp(appName) {
+    // POST to backend launch endpoint; fall back to alert on failure.
+    try {
+        const res = await fetch(`/launch/${encodeURIComponent(appName)}`, {
+            method: 'POST'
+        });
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        alert(data.message || `Launch requested for ${appName}`);
+    } catch (err) {
+        console.error(err);
+        alert(`Failed to launch ${appName}`);
+    }
 }
