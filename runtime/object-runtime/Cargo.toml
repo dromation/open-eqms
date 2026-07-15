@@ -1,0 +1,13 @@
+[package]
+name = "open-eqms-object-runtime"
+version = "0.1.0"
+edition = "2021"
+description = "Open-EQMS Object Runtime implementation for SPEC-001"
+license = "GPL-2.0-only"
+
+[lib]
+name = "open_eqms_object_runtime"
+path = "src/lib.rs"
+
+[dependencies]
+regex-lite = "0.1"
