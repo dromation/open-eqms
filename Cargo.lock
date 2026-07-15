@@ -6,8 +6,13 @@ version = 4
 name = "open-eqms-object-runtime"
 version = "0.1.0"
 dependencies = [
+ "open-eqms-runtime-contracts",
  "regex-lite",
 ]
+
+[[package]]
+name = "open-eqms-runtime-contracts"
+version = "0.1.0"
 
 [[package]]
 name = "regex-lite"

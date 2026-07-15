@@ -1,0 +1,12 @@
+[package]
+name = "open-eqms-runtime-contracts"
+version = "0.1.0"
+edition = "2021"
+description = "Dependency-neutral Runtime data contracts for Open-EQMS"
+license = "GPL-2.0-only"
+
+[lib]
+name = "open_eqms_runtime_contracts"
+path = "src/lib.rs"
+
+[dependencies]

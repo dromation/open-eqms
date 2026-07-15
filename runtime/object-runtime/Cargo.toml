@@ -10,4 +10,5 @@ name = "open_eqms_object_runtime"
 path = "src/lib.rs"
 
 [dependencies]
+open-eqms-runtime-contracts = { path = "../runtime-contracts" }
 regex-lite = "0.1"
