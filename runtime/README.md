@@ -6,4 +6,10 @@ The Runtime contains only universal platform capabilities defined by Architectur
 
 Internal structure under `runtime/` will be created only through approved SPECs and ADRs. Do not add component subdirectories, dependencies, crates, frameworks, or implementation code without approved architecture and specification coverage.
 
+Current approved crates:
+
+- `runtime/runtime-contracts` — shared dependency-neutral Runtime data contracts from ADR-0001.
+- `runtime/object-runtime` — SPEC-001 Object Runtime.
+- `runtime/event-engine` — SPEC-002 Event Engine.
+
 The Runtime must preserve deterministic behavior, offline-first operation, auditability, immutable facts, localization, and the Runtime / Content Package / Plugin boundary.
