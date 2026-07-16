@@ -30,6 +30,7 @@ use crate::validation::{
     validate_metadata, validate_owner_and_scope, validate_record_shape,
     validate_record_with_targets,
 };
+use open_eqms_runtime_contracts::UnitOfWork;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
@@ -171,6 +172,27 @@ where
 
     /// Applies an atomic versioned update to one Object.
     pub fn update_object(&self, request: UpdateObjectRequest) -> ObjectRuntimeResult<ObjectRecord> {
+        self.update_object_with_optional_unit_of_work(request, None)
+    }
+
+    /// Stages an atomic versioned update to one Object in a caller-supplied Unit of Work.
+    ///
+    /// The existing `update_object` method remains the independent-commit API.
+    /// This method validates the same update shape but asks the Storage Provider
+    /// to stage the final write against the supplied Unit-of-Work handle.
+    pub fn update_object_in_unit_of_work(
+        &self,
+        request: UpdateObjectRequest,
+        unit_of_work: &UnitOfWork,
+    ) -> ObjectRuntimeResult<ObjectRecord> {
+        self.update_object_with_optional_unit_of_work(request, Some(unit_of_work))
+    }
+
+    fn update_object_with_optional_unit_of_work(
+        &self,
+        request: UpdateObjectRequest,
+        unit_of_work: Option<&UnitOfWork>,
+    ) -> ObjectRuntimeResult<ObjectRecord> {
         let mut storage = self.lock_storage()?;
         let current = storage.get_object(&request.object_id)?.ok_or_else(|| {
             ObjectRuntimeError::ObjectNotFound {
@@ -199,7 +221,14 @@ where
             storage.object_exists(target_id)
         })?;
 
-        storage.replace_object(updated.clone(), request.base_version)?;
+        match unit_of_work {
+            Some(unit_of_work) => storage.replace_object_in_unit_of_work(
+                unit_of_work,
+                updated.clone(),
+                request.base_version,
+            )?,
+            None => storage.replace_object(updated.clone(), request.base_version)?,
+        }
         Ok(updated)
     }
 

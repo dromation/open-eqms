@@ -4,8 +4,9 @@ use crate::types::{
     PropertyDefinition, PropertyValueKind, RelationCardinality, RelationDefinition,
     StructuralConstraints,
 };
+use open_eqms_runtime_contracts::UnitOfWork;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Barrier};
+use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 
 #[derive(Default)]
@@ -128,6 +129,217 @@ impl StorageProvider for AlternateMemoryStorage {
     }
 }
 
+#[derive(Clone, Default)]
+struct SharedUnitOfWorkStorage {
+    inner: Arc<Mutex<SharedUnitOfWorkStorageInner>>,
+}
+
+#[derive(Default)]
+struct SharedUnitOfWorkStorageInner {
+    types: BTreeMap<ObjectTypeRef, ObjectTypeDefinition>,
+    objects: BTreeMap<ObjectId, ObjectRecord>,
+    staged_replacements: BTreeMap<UnitOfWork, Vec<(ObjectRecord, Version)>>,
+    fail_stage: bool,
+    fail_commit: bool,
+    fail_rollback: bool,
+}
+
+impl SharedUnitOfWorkStorage {
+    fn with_stage_failure() -> Self {
+        let storage = Self::default();
+        storage.inner.lock().unwrap().fail_stage = true;
+        storage
+    }
+
+    fn lock_inner(
+        &self,
+    ) -> ObjectRuntimeResult<std::sync::MutexGuard<'_, SharedUnitOfWorkStorageInner>> {
+        self.inner
+            .lock()
+            .map_err(|_| ObjectRuntimeError::StorageProviderFailure {
+                message: "shared unit-of-work storage lock poisoned".to_owned(),
+            })
+    }
+}
+
+impl StorageProvider for SharedUnitOfWorkStorage {
+    fn get_type(
+        &self,
+        object_type: &ObjectTypeRef,
+    ) -> ObjectRuntimeResult<Option<ObjectTypeDefinition>> {
+        Ok(self.lock_inner()?.types.get(object_type).cloned())
+    }
+
+    fn put_type(&mut self, definition: ObjectTypeDefinition) -> ObjectRuntimeResult<()> {
+        self.lock_inner()?
+            .types
+            .insert(definition.type_ref.clone(), definition);
+        Ok(())
+    }
+
+    fn get_object(&self, object_id: &ObjectId) -> ObjectRuntimeResult<Option<ObjectRecord>> {
+        Ok(self.lock_inner()?.objects.get(object_id).cloned())
+    }
+
+    fn insert_object(&mut self, record: ObjectRecord) -> ObjectRuntimeResult<()> {
+        let mut inner = self.lock_inner()?;
+        if inner.objects.contains_key(&record.id) {
+            return Err(ObjectRuntimeError::DuplicateIdentity {
+                object_id: record.id,
+            });
+        }
+        inner.objects.insert(record.id.clone(), record);
+        Ok(())
+    }
+
+    fn replace_object(
+        &mut self,
+        record: ObjectRecord,
+        expected_version: Version,
+    ) -> ObjectRuntimeResult<()> {
+        let mut inner = self.lock_inner()?;
+        replace_committed_object(&mut inner, record, expected_version)
+    }
+
+    fn begin_unit_of_work(&mut self, unit_of_work: &UnitOfWork) -> ObjectRuntimeResult<()> {
+        self.lock_inner()?
+            .staged_replacements
+            .entry(unit_of_work.clone())
+            .or_default();
+        Ok(())
+    }
+
+    fn replace_object_in_unit_of_work(
+        &mut self,
+        unit_of_work: &UnitOfWork,
+        record: ObjectRecord,
+        expected_version: Version,
+    ) -> ObjectRuntimeResult<()> {
+        let mut inner = self.lock_inner()?;
+        if inner.fail_stage {
+            return Err(ObjectRuntimeError::StorageProviderFailure {
+                message: "injected staged replace failure".to_owned(),
+            });
+        }
+
+        let current =
+            inner
+                .objects
+                .get(&record.id)
+                .ok_or_else(|| ObjectRuntimeError::ObjectNotFound {
+                    object_id: record.id.clone(),
+                })?;
+        if current.version != expected_version {
+            return Err(ObjectRuntimeError::VersionConflict {
+                object_id: record.id,
+                expected: expected_version,
+                actual: current.version,
+            });
+        }
+
+        let staged = inner
+            .staged_replacements
+            .get_mut(unit_of_work)
+            .ok_or_else(|| inactive_unit_of_work(unit_of_work))?;
+        staged.push((record, expected_version));
+        Ok(())
+    }
+
+    fn commit_unit_of_work(&mut self, unit_of_work: &UnitOfWork) -> ObjectRuntimeResult<()> {
+        let mut inner = self.lock_inner()?;
+        if inner.fail_commit {
+            return Err(ObjectRuntimeError::StorageProviderFailure {
+                message: "injected unit-of-work commit failure".to_owned(),
+            });
+        }
+
+        let staged = inner
+            .staged_replacements
+            .get(unit_of_work)
+            .cloned()
+            .ok_or_else(|| inactive_unit_of_work(unit_of_work))?;
+
+        for (record, expected_version) in &staged {
+            let current = inner.objects.get(&record.id).ok_or_else(|| {
+                ObjectRuntimeError::ObjectNotFound {
+                    object_id: record.id.clone(),
+                }
+            })?;
+            if current.version != *expected_version {
+                return Err(ObjectRuntimeError::VersionConflict {
+                    object_id: record.id.clone(),
+                    expected: *expected_version,
+                    actual: current.version,
+                });
+            }
+        }
+
+        for (record, _) in staged {
+            inner.objects.insert(record.id.clone(), record);
+        }
+        inner.staged_replacements.remove(unit_of_work);
+        Ok(())
+    }
+
+    fn rollback_unit_of_work(&mut self, unit_of_work: &UnitOfWork) -> ObjectRuntimeResult<()> {
+        let mut inner = self.lock_inner()?;
+        if inner.fail_rollback {
+            return Err(ObjectRuntimeError::StorageProviderFailure {
+                message: "injected unit-of-work rollback failure".to_owned(),
+            });
+        }
+        inner
+            .staged_replacements
+            .remove(unit_of_work)
+            .ok_or_else(|| inactive_unit_of_work(unit_of_work))?;
+        Ok(())
+    }
+
+    fn object_exists(&self, object_id: &ObjectId) -> ObjectRuntimeResult<bool> {
+        Ok(self.lock_inner()?.objects.contains_key(object_id))
+    }
+
+    fn visit_objects(
+        &self,
+        visitor: &mut dyn FnMut(&ObjectRecord) -> ObjectRuntimeResult<()>,
+    ) -> ObjectRuntimeResult<()> {
+        for record in self.lock_inner()?.objects.values() {
+            visitor(record)?;
+        }
+        Ok(())
+    }
+}
+
+fn replace_committed_object(
+    inner: &mut SharedUnitOfWorkStorageInner,
+    record: ObjectRecord,
+    expected_version: Version,
+) -> ObjectRuntimeResult<()> {
+    let current =
+        inner
+            .objects
+            .get(&record.id)
+            .ok_or_else(|| ObjectRuntimeError::ObjectNotFound {
+                object_id: record.id.clone(),
+            })?;
+    if current.version != expected_version {
+        return Err(ObjectRuntimeError::VersionConflict {
+            object_id: record.id,
+            expected: expected_version,
+            actual: current.version,
+        });
+    }
+
+    inner.objects.insert(record.id.clone(), record);
+    Ok(())
+}
+
+fn inactive_unit_of_work(unit_of_work: &UnitOfWork) -> ObjectRuntimeError {
+    ObjectRuntimeError::StorageProviderFailure {
+        message: format!("unit of work is not active: {unit_of_work}"),
+    }
+}
+
 struct FixedIds {
     ids: Vec<ObjectId>,
     index: usize,
@@ -211,6 +423,20 @@ fn runtime() -> ObjectRuntime<InMemoryStorage, FixedIds> {
     runtime
 }
 
+fn shared_unit_of_work_runtime(
+    storage: SharedUnitOfWorkStorage,
+) -> (
+    ObjectRuntime<SharedUnitOfWorkStorage, FixedIds>,
+    SharedUnitOfWorkStorage,
+) {
+    let coordinator = storage.clone();
+    let runtime = ObjectRuntime::new(storage, FixedIds::new(&["object-1"]));
+    runtime
+        .register_object_type(object_type(type_ref()))
+        .unwrap();
+    (runtime, coordinator)
+}
+
 fn create_request(object_type: ObjectTypeRef) -> CreateObjectRequest {
     CreateObjectRequest {
         object_type,
@@ -250,6 +476,13 @@ fn set_name_change(name: &str) -> ObjectChanges {
     changes
 }
 
+fn text_property<'a>(record: &'a ObjectRecord, name: &str) -> &'a str {
+    match record.properties.get(name).unwrap() {
+        PropertyValue::Text { value, .. } => value,
+        _ => panic!("expected text property"),
+    }
+}
+
 #[test]
 fn create_read_and_update_are_by_identity_and_versioned() {
     let runtime = runtime();
@@ -272,6 +505,107 @@ fn create_read_and_update_are_by_identity_and_versioned() {
     assert_eq!(updated.version, Version::new(2));
     assert_eq!(updated.id, created.object_id);
     assert_eq!(updated.object_type, type_ref());
+}
+
+#[test]
+fn unit_of_work_amendment_preserves_independent_update_behavior() {
+    let (runtime, _coordinator) = shared_unit_of_work_runtime(SharedUnitOfWorkStorage::default());
+    let created = runtime.create_object(create_request(type_ref())).unwrap();
+
+    let updated = runtime
+        .update_object(UpdateObjectRequest {
+            object_id: created.object_id.clone(),
+            base_version: created.version,
+            changes: set_name_change("Beta"),
+        })
+        .unwrap();
+    let read = runtime.read_object(&created.object_id).unwrap();
+
+    assert_eq!(updated.version, Version::new(2));
+    assert_eq!(text_property(&read, "name"), "Beta");
+    assert_eq!(read.version, Version::new(2));
+}
+
+#[test]
+fn unit_of_work_staged_update_is_invisible_until_commit() {
+    let (runtime, mut coordinator) =
+        shared_unit_of_work_runtime(SharedUnitOfWorkStorage::default());
+    let created = runtime.create_object(create_request(type_ref())).unwrap();
+    let unit_of_work = UnitOfWork::new("uow-commit");
+    coordinator.begin_unit_of_work(&unit_of_work).unwrap();
+
+    let staged = runtime
+        .update_object_in_unit_of_work(
+            UpdateObjectRequest {
+                object_id: created.object_id.clone(),
+                base_version: created.version,
+                changes: set_name_change("Beta"),
+            },
+            &unit_of_work,
+        )
+        .unwrap();
+    let before_commit = runtime.read_object(&created.object_id).unwrap();
+
+    assert_eq!(staged.version, Version::new(2));
+    assert_eq!(before_commit.version, Version::initial());
+    assert_eq!(text_property(&before_commit, "name"), "Alpha");
+
+    coordinator.commit_unit_of_work(&unit_of_work).unwrap();
+    let after_commit = runtime.read_object(&created.object_id).unwrap();
+
+    assert_eq!(after_commit.version, Version::new(2));
+    assert_eq!(text_property(&after_commit, "name"), "Beta");
+}
+
+#[test]
+fn unit_of_work_rollback_discards_staged_update() {
+    let (runtime, mut coordinator) =
+        shared_unit_of_work_runtime(SharedUnitOfWorkStorage::default());
+    let created = runtime.create_object(create_request(type_ref())).unwrap();
+    let unit_of_work = UnitOfWork::new("uow-rollback");
+    coordinator.begin_unit_of_work(&unit_of_work).unwrap();
+
+    runtime
+        .update_object_in_unit_of_work(
+            UpdateObjectRequest {
+                object_id: created.object_id.clone(),
+                base_version: created.version,
+                changes: set_name_change("Beta"),
+            },
+            &unit_of_work,
+        )
+        .unwrap();
+    coordinator.rollback_unit_of_work(&unit_of_work).unwrap();
+    let read = runtime.read_object(&created.object_id).unwrap();
+
+    assert_eq!(read.version, Version::initial());
+    assert_eq!(text_property(&read, "name"), "Alpha");
+}
+
+#[test]
+fn unit_of_work_staged_write_failure_leaves_committed_state_unchanged() {
+    let (runtime, mut coordinator) =
+        shared_unit_of_work_runtime(SharedUnitOfWorkStorage::with_stage_failure());
+    let created = runtime.create_object(create_request(type_ref())).unwrap();
+    let unit_of_work = UnitOfWork::new("uow-fail-stage");
+    coordinator.begin_unit_of_work(&unit_of_work).unwrap();
+
+    let result = runtime.update_object_in_unit_of_work(
+        UpdateObjectRequest {
+            object_id: created.object_id.clone(),
+            base_version: created.version,
+            changes: set_name_change("Beta"),
+        },
+        &unit_of_work,
+    );
+    let read = runtime.read_object(&created.object_id).unwrap();
+
+    assert!(matches!(
+        result,
+        Err(ObjectRuntimeError::StorageProviderFailure { .. })
+    ));
+    assert_eq!(read.version, Version::initial());
+    assert_eq!(text_property(&read, "name"), "Alpha");
 }
 
 #[test]

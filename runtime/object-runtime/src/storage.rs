@@ -1,7 +1,8 @@
 //! Storage-provider and identity-generation boundaries for the Object Runtime.
 
-use crate::errors::ObjectRuntimeResult;
+use crate::errors::{ObjectRuntimeError, ObjectRuntimeResult};
 use crate::types::{ObjectId, ObjectRecord, ObjectTypeDefinition, ObjectTypeRef, Version};
+use open_eqms_runtime_contracts::UnitOfWork;
 
 /// Abstract persistence boundary used by the Object Runtime.
 ///
@@ -30,6 +31,38 @@ pub trait StorageProvider {
         expected_version: Version,
     ) -> ObjectRuntimeResult<()>;
 
+    /// Begins provider-owned participation in a Unit of Work.
+    ///
+    /// The default implementation reports that this provider does not support
+    /// Unit-of-Work participation. Providers that support staging own the actual
+    /// lifecycle behavior.
+    fn begin_unit_of_work(&mut self, _unit_of_work: &UnitOfWork) -> ObjectRuntimeResult<()> {
+        Err(unsupported_unit_of_work())
+    }
+
+    /// Stages one Object replacement into an externally supplied Unit of Work.
+    ///
+    /// The write must not become visible until the concrete provider commits the
+    /// same Unit of Work.
+    fn replace_object_in_unit_of_work(
+        &mut self,
+        _unit_of_work: &UnitOfWork,
+        _record: ObjectRecord,
+        _expected_version: Version,
+    ) -> ObjectRuntimeResult<()> {
+        Err(unsupported_unit_of_work())
+    }
+
+    /// Commits provider-owned work staged against a Unit of Work.
+    fn commit_unit_of_work(&mut self, _unit_of_work: &UnitOfWork) -> ObjectRuntimeResult<()> {
+        Err(unsupported_unit_of_work())
+    }
+
+    /// Rolls back provider-owned work staged against a Unit of Work.
+    fn rollback_unit_of_work(&mut self, _unit_of_work: &UnitOfWork) -> ObjectRuntimeResult<()> {
+        Err(unsupported_unit_of_work())
+    }
+
     /// Reports whether an Object identity exists.
     fn object_exists(&self, object_id: &ObjectId) -> ObjectRuntimeResult<bool>;
 
@@ -47,4 +80,10 @@ pub trait StorageProvider {
 pub trait ObjectIdGenerator {
     /// Returns the next opaque Object identifier.
     fn next_id(&mut self) -> ObjectId;
+}
+
+fn unsupported_unit_of_work() -> ObjectRuntimeError {
+    ObjectRuntimeError::StorageProviderFailure {
+        message: "unit-of-work participation is not supported by this storage provider".to_owned(),
+    }
 }

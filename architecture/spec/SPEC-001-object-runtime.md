@@ -99,7 +99,7 @@ Described as behavior/contracts, not code. The Object Runtime exposes exactly th
 **Instance operations**
 - Create an Object: given a type, initial properties, initial relations, owner, responsible users, and a permission-scope reference, returns the new Object's identity and version. Fails if the type is unknown or validation fails.
 - Read an Object by identity: returns the full current state (properties, relations, lifecycle state, owner, responsible users, permission-scope reference, version, metadata, retention rule reference) or a not-found error. No filtering parameters exist on this call.
-- Update an Object: given an identity, a base version, and a set of property/relation/lifecycle-state/ownership changes, applies them atomically or rejects the whole update with a version-conflict or validation error. Partial application is never permitted.
+- Update an Object: given an identity, a base version, and a set of property/relation/lifecycle-state/ownership changes, applies them atomically or rejects the whole update with a version-conflict or validation error. Partial application is never permitted. (See "Amendment 1 (ADR-0002)" for an optional, additive Unit-of-Work parameter on this operation.)
 - Add / remove a Relation on an existing Object: a narrower, explicit form of update scoped to relations only, for callers that don't need to touch properties.
 
 **Internal read surface (for the Query Engine only)**
@@ -229,3 +229,23 @@ None. Every ambiguity encountered was resolvable by staying inside the stated Ob
 10. Write the conformance test suite against the in-memory Storage Provider covering Section 14's testing requirements and all eight acceptance criteria.
 11. Write a boundary/lint check (or note for the CI dependency-graph check already planned repo-wide) confirming zero references to any Content-Package-defined symbol from within the Object Runtime source tree.
 12. Do not implement anything listed in Section 3 (Out of Scope) even as a stub beyond the minimal data-contract shapes explicitly named in Section 7.
+
+---
+
+## Amendment 1 (ADR-0002) — Optional Unit-of-Work Participation
+
+Status: Approved addendum. Additive only; nothing in Sections 1–16 above is changed by this amendment. Where anything below appears to conflict with the sections above, it does not — this amendment only adds a new, optional capability to one existing operation.
+
+**Context.** SPEC-003 (Transaction Engine) requires that an Object Runtime state-mutating write and a Transaction/Audit record be committed atomically, in the same physical storage transaction (Baseline Section 9). Achieving this without Object Runtime depending on the Transaction Engine, or vice versa, requires Object Runtime's Update operation to optionally accept a shared, neutral Unit-of-Work handle. This amendment, approved via ADR-0002, adds that capability additively.
+
+**Amendment.**
+
+- Object Runtime's Update operation (Section 6) may optionally accept a Unit-of-Work handle, of the type defined in the shared runtime-contracts layer (ADR-0001 / ADR-0002).
+- When the parameter is omitted, Update behaves exactly as specified in Sections 1–16 above, with no change whatsoever: it commits independently, on its own, exactly as every existing caller and test already expects.
+- When supplied, Update stages its write against the given Unit-of-Work handle instead of committing independently; the actual commit or rollback is driven by whichever orchestrating caller holds the handle, per ADR-0002 — not by Object Runtime itself.
+- This amendment adds no new Object Runtime business logic, changes no data contract in Section 7, and does not alter any invariant in Section 8. It only adds an optional participation point to one existing operation.
+- Object Runtime does not depend on the Transaction Engine, or on any other component, as a result of this amendment. It depends only on the shared Unit-of-Work handle type in the neutral contracts layer, exactly as it already depends on that layer for `ObjectId`/`PropertyValue`.
+
+**Compatibility requirement.** Every existing SPEC-001 test must continue to pass unmodified after this amendment is implemented. If any existing test requires modification to keep passing, that indicates the amendment was not implemented additively, and this must be reported rather than silently resolved.
+
+**Testing addition.** A new test must demonstrate that Update, when given a Unit-of-Work handle alongside a Transaction Engine append sharing the same handle, either both commit or both roll back together (using a test double for the shared storage-wiring layer, consistent with SPEC-003's own testing requirements).

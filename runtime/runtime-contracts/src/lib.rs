@@ -36,6 +36,72 @@ impl fmt::Display for ObjectId {
     }
 }
 
+/// Opaque Unit-of-Work handle representing one physical storage-transaction boundary.
+///
+/// This handle carries no business meaning, does not imply ordering, and is not a
+/// transaction manager. Concrete storage providers own lifecycle behavior for any
+/// Unit of Work they choose to participate in.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct UnitOfWork(String);
+
+impl UnitOfWork {
+    /// Creates a new opaque Unit-of-Work handle from a caller-supplied token.
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    /// Returns the handle token without assigning any business meaning to it.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Reports whether the handle token is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl fmt::Display for UnitOfWork {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Contract implemented by a provider that owns Unit-of-Work lifecycle behavior.
+///
+/// The shared contracts crate defines the shape only. It does not begin, commit,
+/// roll back, store, coordinate, or globally register Units of Work.
+pub trait UnitOfWorkLifecycle {
+    /// Provider-specific lifecycle error type.
+    type Error;
+
+    /// Begins participation in a Unit of Work owned by the concrete provider.
+    fn begin_unit_of_work(&mut self, unit_of_work: &UnitOfWork) -> Result<(), Self::Error>;
+
+    /// Commits the provider-owned work staged against the supplied handle.
+    fn commit_unit_of_work(&mut self, unit_of_work: &UnitOfWork) -> Result<(), Self::Error>;
+
+    /// Rolls back the provider-owned work staged against the supplied handle.
+    fn rollback_unit_of_work(&mut self, unit_of_work: &UnitOfWork) -> Result<(), Self::Error>;
+}
+
+/// Contract implemented by a provider that can stage writes into a Unit of Work.
+///
+/// The `Write` type is owned by the participating component or storage provider.
+/// This keeps Runtime contracts neutral and prevents this crate from importing
+/// engine-specific record types.
+pub trait UnitOfWorkStaging<Write> {
+    /// Provider-specific staging error type.
+    type Error;
+
+    /// Stages one provider-owned write against the supplied Unit-of-Work handle.
+    fn stage_unit_of_work_write(
+        &mut self,
+        unit_of_work: &UnitOfWork,
+        write: Write,
+    ) -> Result<(), Self::Error>;
+}
+
 /// Primitive property or payload value kinds shared by Runtime data contracts.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum PropertyValueKind {
@@ -106,7 +172,10 @@ impl PropertyValue {
 
 #[cfg(test)]
 mod tests {
-    use super::{ObjectId, PropertyValue, PropertyValueKind};
+    use super::{
+        ObjectId, PropertyValue, PropertyValueKind, UnitOfWork, UnitOfWorkLifecycle,
+        UnitOfWorkStaging,
+    };
     use std::collections::BTreeSet;
 
     #[test]
@@ -172,5 +241,78 @@ mod tests {
 
         assert_eq!(value, value.clone());
         assert_eq!(PropertyValueKind::Reference, value.kind());
+    }
+
+    #[test]
+    fn unit_of_work_preserves_opaque_token_behavior() {
+        let unit_of_work = UnitOfWork::new("uow-001");
+
+        assert_eq!("uow-001", unit_of_work.as_str());
+        assert_eq!("uow-001", unit_of_work.to_string());
+        assert!(!unit_of_work.is_empty());
+        assert!(UnitOfWork::new("").is_empty());
+    }
+
+    #[test]
+    fn unit_of_work_contracts_are_provider_owned() {
+        #[derive(Default)]
+        struct TestParticipant {
+            lifecycle: Vec<String>,
+            staged: Vec<String>,
+        }
+
+        impl UnitOfWorkLifecycle for TestParticipant {
+            type Error = String;
+
+            fn begin_unit_of_work(&mut self, unit_of_work: &UnitOfWork) -> Result<(), Self::Error> {
+                self.lifecycle
+                    .push(format!("begin:{}", unit_of_work.as_str()));
+                Ok(())
+            }
+
+            fn commit_unit_of_work(
+                &mut self,
+                unit_of_work: &UnitOfWork,
+            ) -> Result<(), Self::Error> {
+                self.lifecycle
+                    .push(format!("commit:{}", unit_of_work.as_str()));
+                Ok(())
+            }
+
+            fn rollback_unit_of_work(
+                &mut self,
+                unit_of_work: &UnitOfWork,
+            ) -> Result<(), Self::Error> {
+                self.lifecycle
+                    .push(format!("rollback:{}", unit_of_work.as_str()));
+                Ok(())
+            }
+        }
+
+        impl UnitOfWorkStaging<String> for TestParticipant {
+            type Error = String;
+
+            fn stage_unit_of_work_write(
+                &mut self,
+                unit_of_work: &UnitOfWork,
+                write: String,
+            ) -> Result<(), Self::Error> {
+                self.staged
+                    .push(format!("{}:{}", unit_of_work.as_str(), write));
+                Ok(())
+            }
+        }
+
+        let mut participant = TestParticipant::default();
+        let unit_of_work = UnitOfWork::new("uow-001");
+
+        participant.begin_unit_of_work(&unit_of_work).unwrap();
+        participant
+            .stage_unit_of_work_write(&unit_of_work, "write-001".to_owned())
+            .unwrap();
+        participant.commit_unit_of_work(&unit_of_work).unwrap();
+
+        assert_eq!(participant.lifecycle, ["begin:uow-001", "commit:uow-001"]);
+        assert_eq!(participant.staged, ["uow-001:write-001"]);
     }
 }
