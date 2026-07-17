@@ -37,7 +37,7 @@ The Transaction Engine must not implement, and Codex must not add under SPEC-003
 - **Event Engine business logic** — the Transaction Engine never appends, reads, or validates Business Events. It may carry an opaque reference to an Event ID, exactly as the Event Engine carries opaque `ObjectId` references.
 - **Synchronization** — no delta computation, no conflict resolution. The Transaction Engine exposes the sequence-number and version data a Synchronization Engine may later use, nothing more.
 - **Security authorization** — no permission evaluation, and no decision about whether a signer was entitled to sign. The Transaction Engine verifies that a Level 3 signature is cryptographically valid for the stated signer and content (a structural check, described in "Signature Metadata Contract (Level 3)"); it never decides whether that signer was authorized to perform the signed action.
-- **Cryptographic algorithm design** — the Transaction Engine depends on an abstract Cryptographic Provider contract for hashing and signing (Baseline Section 13: "using established libraries only — never a custom algorithm"). It never implements a hashing or signing algorithm itself.
+- **Cryptographic algorithm design** — the Transaction Engine depends on an abstract Cryptographic Provider contract for hashing and signature verification (Baseline Section 13: "using established libraries only — never a custom algorithm"). It never implements a hashing or verification algorithm itself, and it never produces signatures.
 - **Database providers** — no dependency on SQLite or PostgreSQL specifics; the Transaction Engine depends on an abstract, append-only Storage Provider contract, exactly as SPEC-001 and SPEC-002 require of their own storage.
 - **Business Packages, GUI, AI, SCADA, Office integration, native plugins** — not referenced anywhere in this SPEC.
 - **Statistics/KPI Engines** — no aggregation, trend calculation, or threshold evaluation.
@@ -47,10 +47,11 @@ The Transaction Engine must not implement, and Codex must not add under SPEC-003
 - **Transaction** — a single immutable record of a validated state change, at one of three regulatory levels, appended once and never altered.
 - **Transaction/Audit Log** — the complete, append-only, ordered store of all Transactions (Baseline Section 9).
 - **Transaction Level** — one of Level 1 (ordinary edit), Level 2 (process/significant event), or Level 3 (confirmed regulated milestone) — see "Transaction Levels."
-- **Transaction Sequence** — a strictly increasing, Transaction-Engine-assigned marker recording append order within the Transaction/Audit Log, structurally identical in role to the Event Engine's Append Sequence but a distinct numbering scheme scoped to this log only.
+- **Append Index** — a strictly increasing, Transaction-Engine-assigned marker recording append order within the Transaction/Audit Log, assigned to every Transaction regardless of level. Purely technical; carries no regulatory meaning; governs the log's sequential read order.
+- **Transaction Sequence** — the Baseline-mandated regulatory sequence field (Baseline Section 9: Level 2 "adds sequence number"), carried only by Level 2 and Level 3 Transactions. Distinct from Append Index: Transaction Sequence is a regulatory field, Append Index is the technical read-ordering key every Transaction has regardless of level.
 - **Unit of Work** — an opaque handle representing one physical storage-transaction boundary, used to co-commit an Object Runtime state change and its Transaction record atomically. Defined and owned by neither engine — see "Atomic State-Change and Audit-Record Boundary."
 - **Prior Reference** — an optional caller-supplied link from a Transaction to either a preceding Transaction or a triggering Event, stored opaquely.
-- **Cryptographic Provider** — the abstract, pluggable contract the Transaction Engine depends on for computing hashes (Level 2) and producing/verifying signatures (Level 3). No concrete algorithm or library is chosen by this SPEC.
+- **Cryptographic Provider** — the abstract, pluggable contract the Transaction Engine depends on for computing hashes (Level 2) and verifying signatures (Level 3). It does not produce or hold signatures: a Level 3 signature is always supplied by the caller, already produced elsewhere, outside this SPEC's scope. No concrete algorithm or library is chosen by this SPEC.
 - **Storage Provider (Transaction Store)** — the abstract, append-only persistence contract the Transaction Engine depends on; concrete implementation is out of scope here.
 
 ## Transaction Identity
@@ -100,7 +101,7 @@ This is the central design question for the Transaction Engine: Baseline Section
 
 ## Base-Version and Resulting-Version Metadata
 
-- Every Level 1+ Transaction carries the base version (the Object's version immediately before the change) and the resulting version (immediately after), using the same `Version` representation Object Runtime uses (SPEC-001 Section 5.3/7).
+- Every Level 1+ Transaction carries the base version (the Object's version immediately before the change) and the resulting version (immediately after), using the shared `Version` type promoted into the runtime-contracts layer alongside `ObjectId`/`PropertyValue`/the Unit-of-Work contracts (ADR-0003). The Transaction Engine must not define its own, separately-typed version representation (e.g., a locally declared `ObjectVersion`): a semantically identical but Rust-type-incompatible duplicate would defeat the point of sharing it, particularly since base/resulting versions must pass cleanly between Object Runtime and the Transaction Engine through the same Unit of Work.
 - The Transaction Engine validates only internal, structural consistency: the resulting version must be exactly one greater than the base version. It does not call Object Runtime to confirm these values actually match live Object state — that guarantee comes from Object Runtime's own optimistic-concurrency check at the moment of its Update call, inside the same Unit of Work described above, not from any check performed by the Transaction Engine itself.
 
 ## Actor, Device, Site, and Source Metadata
@@ -111,9 +112,9 @@ This is the central design question for the Transaction Engine: Baseline Section
 
 ## Sequence Numbers
 
-- Level 2 and Level 3 Transactions carry a Transaction Sequence value, assigned by the Transaction Engine at append time: strictly increasing, never reused, never derived from wall-clock time — the same ordering discipline established for the Event Engine's Append Sequence (SPEC-002), applied here to the Transaction/Audit Log's own, independent numbering.
-- Transaction Sequence is scoped to a single Transaction/Audit Log instance. It is not a cross-site or global ordering guarantee; cross-site ordering is a Synchronization Engine concern, outside this SPEC.
-- Level 1 Transactions do not carry a Transaction Sequence value, consistent with the field lists in "Transaction Levels."
+- Every Transaction, at every level, carries an Append Index, assigned by the Transaction Engine at append time: strictly increasing, never reused, never derived from wall-clock time — the same ordering discipline established for the Event Engine's Append Sequence (SPEC-002). Append Index is what the sequential range-read operation orders by (see "Public Runtime API"), so every Transaction, including Level 1, is reachable through the complete ordered log stream.
+- Level 2 and Level 3 Transactions additionally carry a Transaction Sequence value — the Baseline-mandated regulatory sequence number — also assigned by the Transaction Engine at append time, independent of Append Index. Level 1 Transactions do not carry a Transaction Sequence value, consistent with "Transaction Levels"; this does not affect their reachability, since Append Index, not Transaction Sequence, governs read order.
+- Both Append Index and Transaction Sequence are scoped to a single Transaction/Audit Log instance. Neither is a cross-site or global ordering guarantee; cross-site ordering is a Synchronization Engine concern, outside this SPEC.
 
 ## Rule-Evaluation Metadata Fields
 
@@ -129,7 +130,7 @@ This is the central design question for the Transaction Engine: Baseline Section
 ## Signature Metadata Contract (Level 3)
 
 - Every Level 3 Transaction carries: signer identity (an opaque reference, structurally similar to actor reference but distinct — a Level 3 signer is not assumed to be the same as the Level 1/2 actor), signer role, signature meaning (a language-neutral token or enum — see "Localization Boundary"), an authentication-evidence reference (opaque, e.g. pointing at how the signer proved their identity — not interpreted by the Transaction Engine), the signed revision (identifying exactly what version/state was signed), a reason (free text, taggable), a signing timestamp, and a cryptographic signature.
-- The signature is produced and verified through the abstract Cryptographic Provider, using an established library the Cryptographic Provider wraps (Baseline Section 13). The Transaction Engine never implements signing or verification logic itself.
+- The signature is supplied by the caller, already produced elsewhere — the Transaction Engine never produces or holds signing key material, and the Cryptographic Provider exposes no signing capability. Verification is performed through the abstract Cryptographic Provider, using an established library it wraps (Baseline Section 13). The Transaction Engine never implements verification logic itself, and it never implements or requires signing logic.
 - At append time, the Transaction Engine requires the supplied signature to verify successfully against the supplied signed content and signer reference, via the Cryptographic Provider's verify capability. This is a structural check only: it confirms the signature is mathematically valid for the stated inputs. It does not confirm the signer was authorized to sign, or that the reason given is truthful — those are Security's and the business process's concerns, entirely outside this SPEC.
 - A Level 3 Transaction whose signature fails verification is rejected at append time; no partial record is ever stored.
 
@@ -147,7 +148,7 @@ At append time, and only at append time, the Transaction Engine validates:
 - old value and new value are well-formed `PropertyValue` instances
 - resulting version is exactly one greater than base version
 - actor and device references are present (site reference is optional)
-- for Level 2+: Transaction Sequence, server receipt time, and transaction hash are present; any supplied Prior Reference is structurally well-formed
+- for Level 2+: server receipt time is present and well-formed, and any supplied Prior Reference — including an optional prior-record hash value supplied for chaining (see "Transaction Hash (Level 2)") — is structurally well-formed. Transaction Sequence, Append Index, and transaction hash are never supplied by the caller: they are assigned or computed by the Transaction Engine itself as part of a successful append, so there is nothing to validate as caller input for these three fields.
 - for Level 3: signer identity, signer role, signature meaning, authentication-evidence reference, signed revision, reason, signing timestamp, and a cryptographic signature are all present, and the signature verifies successfully via the Cryptographic Provider
 
 No validation occurs, and no re-validation is ever performed, after a Transaction has been successfully appended.
@@ -157,18 +158,18 @@ No validation occurs, and no re-validation is ever performed, after a Transactio
 Described as behavior/contracts, not code. The Transaction Engine exposes exactly these capability groups:
 
 **Append operation**
-- Append a new Transaction at a declared level, given the fields required for that level (see "Transaction Levels" and "Validation Rules"), optionally participating in a caller-supplied Unit of Work (see "Atomic State-Change and Audit-Record Boundary"). Returns the assigned TransactionId and, for Level 2+, the assigned Transaction Sequence value and computed transaction hash. Fails entirely (no partial record) on any validation failure, signature-verification failure, or Storage Provider failure.
+- Append a new Transaction at a declared level, given the fields required for that level (see "Transaction Levels" and "Validation Rules") — for Level 2+, this may include an optional prior-record hash as chaining input, never the final transaction hash itself — optionally participating in a caller-supplied Unit of Work (see "Atomic State-Change and Audit-Record Boundary"). Returns the assigned TransactionId, Append Index, and, for Level 2+, the assigned Transaction Sequence value and computed transaction hash. Fails entirely (no partial record) on any validation failure, signature-verification failure, or Storage Provider failure.
 
 **Read operations**
 - Read a single Transaction by TransactionId.
-- Read a contiguous range of Transactions by Transaction Sequence, in strictly ascending order, supporting incremental/streaming consumption — mirroring the Event Engine's range-read design (SPEC-002). This is the only mechanism by which other components observe the Transaction/Audit Log; it is not a filtering or search API.
+- Read a contiguous range of Transactions by Append Index, in strictly ascending order, supporting incremental/streaming consumption — mirroring the Event Engine's range-read design (SPEC-002). This is the only mechanism by which other components observe the Transaction/Audit Log, and it covers every Transaction Level, including Level 1; it is not a filtering or search API.
 
 No other operations exist: no update, no delete, no filter-by-field, no search, no cross-transaction grouping beyond the opaque Prior Reference already described.
 
 ## Storage Abstraction
 
 - The Transaction Engine depends on an abstract, append-only Transaction Store contract (its own Storage Provider), independent of and structurally parallel to Object Runtime's and the Event Engine's storage abstractions. It must not assume SQLite or PostgreSQL specifics. Per ADR-0002, for the MVP, the concrete Transaction Store implementation and Object Runtime's concrete Storage Provider implementation must be configured against the same physical database/transaction manager whenever atomic state+audit writes are required; the SQLite and PostgreSQL providers must eventually expose compatible Unit-of-Work participation.
-- The Transaction Store contract must support: appending one Transaction atomically (optionally as part of an externally supplied Unit of Work), reading one Transaction by TransactionId, streaming Transactions in Transaction Sequence order, detecting duplicate TransactionId, and allocating the next Transaction Sequence value atomically.
+- The Transaction Store contract must support: appending one Transaction atomically (optionally as part of an externally supplied Unit of Work), reading one Transaction by TransactionId, streaming Transactions in Append Index order, detecting duplicate TransactionId, and atomically allocating both the next Append Index (every level) and, for Level 2+, the next Transaction Sequence value.
 - Swapping the concrete Transaction Store implementation must require no change to any Transaction Engine caller.
 
 ## Error Model
@@ -183,7 +184,7 @@ The Transaction Engine returns structured, typed errors — never panics across 
 - Signature verification failure (Level 3)
 - Cryptographic Provider failure (hash or signature computation/verification unavailable)
 - Storage Provider failure during append (never leaves a partial record)
-- Invalid or out-of-range Transaction Sequence bounds (on range read)
+- Invalid or out-of-range Append Index bounds (on range read)
 
 Each error kind is distinct and machine-distinguishable. A validation failure identifies the specific failing field and, where applicable, the expected constraint and actual value — consistent with the error-detail requirement established in SPEC-002.
 
@@ -216,7 +217,7 @@ Each error kind is distinct and machine-distinguishable. A validation failure id
 
 - A conformance test suite must run against any Transaction Store implementation (including an in-memory one) without modification.
 - Tests proving immutability: no code path modifies or removes a previously appended Transaction.
-- Tests proving deterministic Transaction Sequence assignment under concurrent appends, and deterministic hash/signature output for identical inputs via a deterministic test Cryptographic Provider.
+- Tests proving deterministic Append Index and (for Level 2+) Transaction Sequence assignment under concurrent appends, and deterministic hash/signature-verification output for identical inputs via a deterministic test Cryptographic Provider.
 - Tests proving the Unit of Work contract: an Object Runtime write and a Transaction Engine append sharing a Unit of Work either both commit or both roll back, using a test double for the shared storage-wiring layer (since real cross-engine physical-transaction wiring is a deployment concern outside this SPEC).
 - Negative tests for every error kind in "Error Model," including Level 3 signature-verification failure.
 - A boundary test proving the Transaction Engine has zero compile-time or runtime dependency on Content-Package-defined code, and zero calls into Object Runtime, Event Engine, Rule Engine, Process Engine, Query Engine, or Security logic.
@@ -234,6 +235,7 @@ Each error kind is distinct and machine-distinguishable. A validation failure id
 9. A resulting version that is not exactly one greater than the supplied base version is rejected.
 10. Replaying the same sequence of append calls with deterministic providers produces byte-identical Transaction records, including identical hashes and signatures.
 11. Swapping the Transaction Store implementation requires no change to any Transaction Engine caller.
+12. Level 1 Transactions are retrievable through the Append Index range-read operation, in the same ordered stream as Level 2 and Level 3 Transactions.
 
 ## Assumptions
 
@@ -243,6 +245,7 @@ Each error kind is distinct and machine-distinguishable. A validation failure id
 4. **Hash chaining is caller-driven, not Transaction-Engine-driven** — assumed that genuine hash-chaining (Baseline Roadmap Phase 3) is achieved by the caller supplying the prior record's hash as input, not by the Transaction Engine looking up or resolving a Prior Reference itself, to preserve the no-querying invariant.
 5. **Operation descriptor vocabulary** — assumed to be an opaque, caller-supplied token (not a fixed enum defined by this SPEC), mirroring how Object Runtime and Event Engine treat externally supplied vocabularies as inert configuration rather than Runtime-defined business meaning.
 6. **Signed revision representation** — assumed to be an opaque reference (e.g., an Object version or a content hash) rather than a full embedded copy of the signed state, to keep Transaction records bounded in size; the exact shape is left open pending the Security SPEC.
+7. **`Version` promotion to runtime-contracts** — resolved by ADR-0003: `Version` is promoted into the shared runtime-contracts layer established by ADR-0001, alongside `ObjectId`/`PropertyValue`/the Unit-of-Work contracts. No longer an open assumption.
 
 ## Blocking Questions
 
@@ -256,7 +259,7 @@ Both blocking questions below were resolved by the architect's decision recorded
 1. Confirm ADR-0002 and SPEC-001 Amendment 1 are present in the repository, and confirm the full existing SPEC-001 test suite still passes unmodified after the amendment, before writing any Transaction Engine implementation code. If either is missing, or the SPEC-001 suite doesn't pass unmodified, stop and report rather than proceeding.
 2. Define TransactionId, transaction schema version, Transaction Level, Transaction Sequence, Prior Reference, ActorRef/DeviceRef/SiteRef (local to this crate), and the Level 1/2/3 field-set data contracts as idiomatic Rust types, reusing `ObjectId`, `PropertyValue`, and the Unit of Work type from the shared contracts layer.
 3. Define the abstract, append-only Transaction Store trait boundary, without implementing a concrete provider (an in-memory test provider is in scope for testing only).
-4. Define the abstract Cryptographic Provider trait boundary (hash + sign/verify), without implementing or selecting a concrete algorithm or library; provide a deterministic test double for conformance testing.
+4. Define the abstract Cryptographic Provider trait boundary (hash + verify only — no signing capability), without implementing or selecting a concrete algorithm or library; provide a deterministic test double for conformance testing.
 5. Implement the Append operation with full level-aware validation, optional Unit of Work participation, deterministic TransactionId/Transaction Sequence assignment, and hash/signature computation via the Cryptographic Provider.
 6. Implement Read-by-identity and the incremental/streaming range-read-by-Transaction-Sequence operation — no additional read operations.
 7. Implement the full error taxonomy from "Error Model" as distinct, structured error types.

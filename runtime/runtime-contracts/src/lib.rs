@@ -36,6 +36,32 @@ impl fmt::Display for ObjectId {
     }
 }
 
+/// Monotonic per-object version used for optimistic concurrency.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct Version(u64);
+
+impl Version {
+    /// Returns the initial version assigned to a newly created Object.
+    pub fn initial() -> Self {
+        Self(1)
+    }
+
+    /// Creates a version from a raw monotonic marker.
+    pub fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    /// Returns the raw monotonic marker.
+    pub fn value(self) -> u64 {
+        self.0
+    }
+
+    /// Returns the next version after a successful update.
+    pub fn next(self) -> Self {
+        Self(self.0 + 1)
+    }
+}
+
 /// Opaque Unit-of-Work handle representing one physical storage-transaction boundary.
 ///
 /// This handle carries no business meaning, does not imply ordering, and is not a
@@ -174,7 +200,7 @@ impl PropertyValue {
 mod tests {
     use super::{
         ObjectId, PropertyValue, PropertyValueKind, UnitOfWork, UnitOfWorkLifecycle,
-        UnitOfWorkStaging,
+        UnitOfWorkStaging, Version,
     };
     use std::collections::BTreeSet;
 
@@ -198,6 +224,16 @@ mod tests {
         let ordered = ids.iter().map(ObjectId::as_str).collect::<Vec<_>>();
 
         assert_eq!(ordered, ["object-a", "object-b", "object-c"]);
+    }
+
+    #[test]
+    fn version_preserves_monotonic_behavior() {
+        let initial = Version::initial();
+        let next = initial.next();
+
+        assert_eq!(initial.value(), 1);
+        assert_eq!(next, Version::new(2));
+        assert!(next > initial);
     }
 
     #[test]

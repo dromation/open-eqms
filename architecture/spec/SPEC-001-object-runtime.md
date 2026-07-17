@@ -117,7 +117,7 @@ Described structurally, not as code:
 - **PropertyDefinition** — name, PropertyValue kind, required/optional, and structural constraints (min/max, pattern, allowed enum values), owned by Object Type metadata.
 - **Relation** — (relationType: string, targetId: ObjectId), with cardinality constraints defined on the owning Object Type.
 - **LifecycleState** — an opaque string token; no fixed enumeration exists at the Object Runtime layer.
-- **Version** — a strictly increasing integer (or equivalent monotonic marker) plus the base-version value supplied on every update call.
+- **Version** — a strictly increasing integer (or equivalent monotonic marker) plus the base-version value supplied on every update call. (See "Amendment 2 (ADR-0003)" for promotion of this type into the shared runtime-contracts layer.)
 - **OwnershipInfo** — owner (an ObjectId referencing an Identity-bearing Object, e.g., an Employee) and a set of responsible-user references, same kind.
 - **PermissionScopeRef** — an opaque reference the Security component resolves; the Object Runtime stores and returns it, never evaluates it.
 - **RetentionRuleRef** — an opaque reference to a retention policy (Baseline Section 21); stored and returned, not interpreted.
@@ -249,3 +249,22 @@ Status: Approved addendum. Additive only; nothing in Sections 1–16 above is ch
 **Compatibility requirement.** Every existing SPEC-001 test must continue to pass unmodified after this amendment is implemented. If any existing test requires modification to keep passing, that indicates the amendment was not implemented additively, and this must be reported rather than silently resolved.
 
 **Testing addition.** A new test must demonstrate that Update, when given a Unit-of-Work handle alongside a Transaction Engine append sharing the same handle, either both commit or both roll back together (using a test double for the shared storage-wiring layer, consistent with SPEC-003's own testing requirements).
+
+---
+
+## Amendment 2 (ADR-0003) — Shared `Version` Type
+
+Status: Approved addendum. Additive/relocation only; nothing in Sections 1–16 above changes in shape or meaning as a result of this amendment — only where the `Version` type is physically defined changes.
+
+**Context.** SPEC-003 (Transaction Engine) needs to carry base/resulting version values on every Level 1+ Transaction, and must use the same `Version` type Object Runtime uses, not a separately defined lookalike, so values pass cleanly through a shared Unit of Work (ADR-0002). This amendment, approved via ADR-0003, promotes `Version` into the shared runtime-contracts layer already holding `ObjectId`/`PropertyValue`/the Unit-of-Work contracts.
+
+**Amendment.**
+
+- `Version` (Section 7) is relocated from the object-runtime crate into the shared runtime-contracts layer (ADR-0001/ADR-0003). This is a pure move: its shape and meaning as defined in Section 7 do not change.
+- Object Runtime depends on runtime-contracts for `Version`, exactly as it already does for `ObjectId`/`PropertyValue`, and re-exports it from the same path every existing caller and test already uses. The relocation must be invisible to them.
+- No data contract in Section 7, and no invariant in Section 8, changes in meaning as a result of this amendment. Only the type's physical location changes.
+- Object Runtime does not gain any new dependency on the Transaction Engine, or on any other engine, as a result of this amendment. It depends only on the shared `Version` type in the neutral contracts layer.
+
+**Compatibility requirement.** Every existing SPEC-001 test must continue to pass unmodified after this amendment is implemented. If any existing test requires modification to keep passing, that indicates the relocation was not implemented as a pure move, and this must be reported rather than silently resolved.
+
+**Testing addition.** A test must confirm that `Version`, as re-exported from Object Runtime, is identical (same type, not merely structurally compatible) to the `Version` type available directly from runtime-contracts, so any future consumer — including the Transaction Engine — can rely on there being exactly one `Version` type in the workspace.

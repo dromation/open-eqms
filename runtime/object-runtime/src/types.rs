@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-pub use open_eqms_runtime_contracts::{ObjectId, PropertyValue, PropertyValueKind};
+pub use open_eqms_runtime_contracts::{ObjectId, PropertyValue, PropertyValueKind, Version};
 
 /// Reference to a registered Object Type metadata definition.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -20,32 +20,6 @@ impl ObjectTypeRef {
             name: name.into(),
             version,
         }
-    }
-}
-
-/// Monotonic per-object version used for optimistic concurrency.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Version(u64);
-
-impl Version {
-    /// Returns the initial version assigned to a newly created Object.
-    pub fn initial() -> Self {
-        Self(1)
-    }
-
-    /// Creates a version from a raw monotonic marker.
-    pub fn new(value: u64) -> Self {
-        Self(value)
-    }
-
-    /// Returns the raw monotonic marker.
-    pub fn value(self) -> u64 {
-        self.0
-    }
-
-    /// Returns the next version after a successful update.
-    pub fn next(self) -> Self {
-        Self(self.0 + 1)
     }
 }
 

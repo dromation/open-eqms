@@ -4,7 +4,7 @@ use crate::types::{
     PropertyDefinition, PropertyValueKind, RelationCardinality, RelationDefinition,
     StructuralConstraints,
 };
-use open_eqms_runtime_contracts::UnitOfWork;
+use open_eqms_runtime_contracts::{UnitOfWork, Version as SharedVersion};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
@@ -505,6 +505,17 @@ fn create_read_and_update_are_by_identity_and_versioned() {
     assert_eq!(updated.version, Version::new(2));
     assert_eq!(updated.id, created.object_id);
     assert_eq!(updated.object_type, type_ref());
+}
+
+#[test]
+fn reexported_version_is_the_shared_runtime_contract_type() {
+    fn accepts_shared_version(version: SharedVersion) -> SharedVersion {
+        version
+    }
+
+    let version: Version = Version::initial();
+
+    assert_eq!(accepts_shared_version(version), SharedVersion::initial());
 }
 
 #[test]
