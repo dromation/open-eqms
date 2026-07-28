@@ -2,7 +2,7 @@
 
 Status: Draft - implementation contract for Codex
 
-Authority order: (1) Architecture Baseline v1.0, (2) AGENTS.md, (3) Approved ADRs (ADR-0000, ADR-0001, ADR-0002), (4) SPEC-001 Object Runtime (as amended by ADR-0002's Amendment 1), (5) SPEC-002 Event Engine, (6) this document.
+Authority order: (1) Architecture Baseline v1.0, (2) AGENTS.md, (3) Approved ADRs (ADR-0000, ADR-0001, ADR-0002, ADR-0003), (4) SPEC-001 Object Runtime (as amended by Amendment 1 (ADR-0002) and Amendment 2 (ADR-0003)), (5) SPEC-002 Event Engine, (6) this document.
 
 ## Purpose
 
@@ -279,7 +279,7 @@ Both blocking questions below were resolved by the architect's decision recorded
 
 ## Implementation Checklist for Codex
 
-1. Confirm ADR-0002 and SPEC-001 Amendment 1 are present in the repository, and confirm the full existing SPEC-001 test suite still passes unmodified after the amendment, before writing any Transaction Engine implementation code. If either is missing, or the SPEC-001 suite doesn't pass unmodified, stop and report rather than proceeding.
+1. Confirm ADR-0002, ADR-0003, SPEC-001 Amendment 1, and SPEC-001 Amendment 2 (ADR-0003) are all present in the repository, and confirm the full existing SPEC-001 test suite still passes unmodified after both amendments, before writing any Transaction Engine implementation code. If any of these is missing, or the SPEC-001 suite doesn't pass unmodified, stop and report rather than proceeding.
 2. Define TransactionId, transaction schema version, Transaction Level, Append Index, Transaction Sequence, PriorReference (a tagged Transaction/Event link), PriorTransactionHash, ActorRef/DeviceRef/SiteRef (local to this crate), the Level 1/2/3 field-set data contracts, and the two-mode Append result type (a committed result carrying Append Index, Transaction Sequence, and transaction hash for an independent append; a staged result carrying only TransactionId for a Unit-of-Work-participating append — see "Public Runtime API") as idiomatic Rust types, reusing `ObjectId`, the shared `Version` type, `PropertyValue`, and the Unit of Work contracts from the shared contracts layer (runtime-contracts).
 3. Define the abstract, append-only Transaction Store trait boundary, without implementing a concrete provider (an in-memory test provider is in scope for testing only).
 4. Define the abstract Cryptographic Provider trait boundary (hash + verify only — no signing capability), without implementing or selecting a concrete algorithm or library; provide a deterministic test double for conformance testing.
