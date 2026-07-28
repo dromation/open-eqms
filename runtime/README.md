@@ -11,5 +11,6 @@ Current approved crates:
 - `runtime/runtime-contracts` — shared dependency-neutral Runtime data contracts from ADR-0001.
 - `runtime/object-runtime` — SPEC-001 Object Runtime.
 - `runtime/event-engine` — SPEC-002 Event Engine.
+- `runtime/transaction-engine` — SPEC-003 Transaction Engine.
 
 The Runtime must preserve deterministic behavior, offline-first operation, auditability, immutable facts, localization, and the Runtime / Content Package / Plugin boundary.

@@ -23,6 +23,13 @@ name = "open-eqms-runtime-contracts"
 version = "0.1.0"
 
 [[package]]
+name = "open-eqms-transaction-engine"
+version = "0.1.0"
+dependencies = [
+ "open-eqms-runtime-contracts",
+]
+
+[[package]]
 name = "regex-lite"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"

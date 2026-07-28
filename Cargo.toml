@@ -3,5 +3,6 @@ members = [
     "runtime/object-runtime",
     "runtime/runtime-contracts",
     "runtime/event-engine",
+    "runtime/transaction-engine",
 ]
 resolver = "2"

@@ -1,0 +1,13 @@
+[package]
+name = "open-eqms-transaction-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Open-EQMS Transaction Engine implementation for SPEC-003"
+license = "GPL-2.0-only"
+
+[lib]
+name = "open_eqms_transaction_engine"
+path = "src/lib.rs"
+
+[dependencies]
+open-eqms-runtime-contracts = { path = "../runtime-contracts" }
