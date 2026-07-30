@@ -1,11 +1,17 @@
 use super::*;
+use crate::capabilities::{validate_query_source_contract, QuerySourceProvider};
 use crate::validation::{validate_query_definition, validate_query_definition_against_schema};
 use open_eqms_runtime_contracts::{PropertyValue, PropertyValueKind};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
+fn source_ref() -> QuerySourceRef {
+    QuerySourceRef::new("synthetic-source")
+}
+
 fn query() -> QueryDefinition {
     QueryDefinition::new(
+        source_ref(),
         TemporalScope::Current,
         None,
         PartialResultPolicy::RejectPartial,
@@ -21,11 +27,42 @@ fn schema() -> QuerySchema {
     ]))
 }
 
+struct SyntheticSource {
+    source: QuerySourceRef,
+    capabilities: SourceCapabilities,
+    schema: QuerySchema,
+}
+
+impl SyntheticSource {
+    fn new(capabilities: SourceCapabilities) -> Self {
+        Self {
+            source: source_ref(),
+            capabilities,
+            schema: schema(),
+        }
+    }
+}
+
+impl QuerySourceProvider for SyntheticSource {
+    fn source_ref(&self) -> &QuerySourceRef {
+        &self.source
+    }
+
+    fn capabilities(&self) -> SourceCapabilities {
+        self.capabilities
+    }
+
+    fn describe_schema(&self) -> QueryEngineResult<QuerySchema> {
+        Ok(self.schema.clone())
+    }
+}
+
 #[test]
 fn well_formed_query_definition_is_accepted() {
     let mut relation_types = BTreeSet::new();
     relation_types.insert("uses".to_owned());
     let definition = QueryDefinition::new(
+        source_ref(),
         TemporalScope::TimeRange {
             from: Some("2026-07-15T10:00:00Z".to_owned()),
             to: Some("2026-07-15T11:00:00Z".to_owned()),
@@ -47,6 +84,7 @@ fn malformed_query_definition_is_rejected() {
     let mut relation_types = BTreeSet::new();
     relation_types.insert(String::new());
     let definition = QueryDefinition::new(
+        source_ref(),
         TemporalScope::Current,
         Some(TraversalSpec::new(
             TraversalDirection::Both,
@@ -70,6 +108,7 @@ fn malformed_query_definition_is_rejected() {
 #[test]
 fn empty_temporal_and_traversal_values_are_rejected() {
     let point = QueryDefinition::new(
+        source_ref(),
         TemporalScope::PointInTime { at: String::new() },
         None,
         PartialResultPolicy::RejectPartial,
@@ -83,6 +122,7 @@ fn empty_temporal_and_traversal_values_are_rejected() {
     ));
 
     let traversal = QueryDefinition::new(
+        source_ref(),
         TemporalScope::Current,
         Some(TraversalSpec::new(
             TraversalDirection::Inbound,
@@ -103,6 +143,7 @@ fn empty_temporal_and_traversal_values_are_rejected() {
 #[test]
 fn invalid_temporal_range_is_rejected() {
     let definition = QueryDefinition::new(
+        source_ref(),
         TemporalScope::TimeRange {
             from: Some("2026-07-15T12:00:00Z".to_owned()),
             to: Some("2026-07-15T11:00:00Z".to_owned()),
@@ -126,6 +167,24 @@ fn minimal_query_uses_no_identity_or_persistence_contract() {
 
     validate_query_definition(&definition).unwrap();
     assert_eq!(definition.temporal_scope, TemporalScope::Current);
+}
+
+#[test]
+fn empty_query_source_is_rejected() {
+    let definition = QueryDefinition::new(
+        QuerySourceRef::new(String::new()),
+        TemporalScope::Current,
+        None,
+        PartialResultPolicy::RejectPartial,
+        PresentationType::RecordSet,
+    );
+
+    assert!(matches!(
+        validate_query_definition(&definition),
+        Err(QueryEngineError::MalformedQuery {
+            failure: ValidationError::EmptyQuerySource
+        })
+    ));
 }
 
 #[test]
@@ -159,6 +218,63 @@ fn predicate_projection_sort_group_and_aggregation_structures_validate() {
         ]);
 
     validate_query_definition_against_schema(&definition, &schema()).unwrap();
+}
+
+#[test]
+fn source_capabilities_accept_supported_query() {
+    let provider = SyntheticSource::new(SourceCapabilities::all());
+    let mut projection = BTreeSet::new();
+    projection.insert("status".to_owned());
+    let definition = query()
+        .with_predicate(Predicate::Exists {
+            field: "status".to_owned(),
+        })
+        .with_projection(Projection::SelectedFields(projection))
+        .with_sort(vec![SortSpec::new("created_at", SortDirection::Ascending)]);
+
+    validate_query_source_contract(&provider, &definition).unwrap();
+}
+
+#[test]
+fn source_capabilities_reject_unsupported_aggregation() {
+    let provider = SyntheticSource::new(SourceCapabilities {
+        aggregation: false,
+        ..SourceCapabilities::all()
+    });
+    let definition = query().with_aggregations(vec![AggregationSpec::new(
+        AggregationFunction::Average,
+        Some("score".to_owned()),
+        "average_score",
+    )]);
+
+    let error = validate_query_source_contract(&provider, &definition).unwrap_err();
+
+    assert!(matches!(
+        error,
+        QueryEngineError::UnsupportedCapability {
+            source,
+            capability: SourceCapability::Aggregation
+        } if source == source_ref()
+    ));
+}
+
+#[test]
+fn source_contract_rejects_unknown_source_without_registry() {
+    let provider = SyntheticSource::new(SourceCapabilities::all());
+    let definition = QueryDefinition::new(
+        QuerySourceRef::new("other-source"),
+        TemporalScope::Current,
+        None,
+        PartialResultPolicy::RejectPartial,
+        PresentationType::RecordSet,
+    );
+
+    let error = validate_query_source_contract(&provider, &definition).unwrap_err();
+
+    assert!(matches!(
+        error,
+        QueryEngineError::UnknownSource { source } if source.as_str() == "other-source"
+    ));
 }
 
 #[test]

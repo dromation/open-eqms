@@ -8,6 +8,8 @@ pub use open_eqms_runtime_contracts::{PropertyValue, PropertyValueKind};
 /// Structured query definition for finite one-shot queries.
 #[derive(Clone, Debug, PartialEq)]
 pub struct QueryDefinition {
+    /// Source reference this query targets.
+    pub source: QuerySourceRef,
     /// Temporal scope the query is defined against.
     pub temporal_scope: TemporalScope,
     /// Optional predicate tree.
@@ -31,12 +33,14 @@ pub struct QueryDefinition {
 impl QueryDefinition {
     /// Creates a new query definition without execution controls.
     pub fn new(
+        source: QuerySourceRef,
         temporal_scope: TemporalScope,
         traversal: Option<TraversalSpec>,
         partial_result_policy: PartialResultPolicy,
         presentation_type: PresentationType,
     ) -> Self {
         Self {
+            source,
             temporal_scope,
             predicate: None,
             projection: Projection::AllFields,
@@ -77,6 +81,119 @@ impl QueryDefinition {
     pub fn with_aggregations(mut self, aggregations: Vec<AggregationSpec>) -> Self {
         self.aggregations = aggregations;
         self
+    }
+}
+
+/// Opaque reference to a declared query source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QuerySourceRef(String);
+
+impl QuerySourceRef {
+    /// Creates a query source reference from a caller-supplied token.
+    pub fn new(token: impl Into<String>) -> Self {
+        Self(token.into())
+    }
+
+    /// Returns the opaque source token.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Reports whether the source token is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl std::fmt::Display for QuerySourceRef {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Query capability that may or may not be supported by a source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SourceCapability {
+    /// Non-current temporal scopes.
+    TemporalScope,
+    /// Relationship traversal.
+    Traversal,
+    /// Predicate evaluation.
+    Predicate,
+    /// Selected-field projection.
+    Projection,
+    /// Sorting.
+    Sorting,
+    /// Grouping.
+    Grouping,
+    /// Aggregation structure.
+    Aggregation,
+}
+
+impl std::fmt::Display for SourceCapability {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::TemporalScope => "temporal scope",
+            Self::Traversal => "traversal",
+            Self::Predicate => "predicate",
+            Self::Projection => "projection",
+            Self::Sorting => "sorting",
+            Self::Grouping => "grouping",
+            Self::Aggregation => "aggregation",
+        })
+    }
+}
+
+/// Declared query capabilities for one source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SourceCapabilities {
+    /// Supports non-current temporal scopes.
+    pub temporal_scope: bool,
+    /// Supports relationship traversal.
+    pub traversal: bool,
+    /// Supports predicates.
+    pub predicates: bool,
+    /// Supports selected-field projection.
+    pub projection: bool,
+    /// Supports sorting.
+    pub sorting: bool,
+    /// Supports grouping.
+    pub grouping: bool,
+    /// Supports aggregation structures.
+    pub aggregation: bool,
+}
+
+impl SourceCapabilities {
+    /// Declares no optional query capabilities.
+    pub const fn none() -> Self {
+        Self {
+            temporal_scope: false,
+            traversal: false,
+            predicates: false,
+            projection: false,
+            sorting: false,
+            grouping: false,
+            aggregation: false,
+        }
+    }
+
+    /// Declares every optional query capability in the approved partial scope.
+    pub const fn all() -> Self {
+        Self {
+            temporal_scope: true,
+            traversal: true,
+            predicates: true,
+            projection: true,
+            sorting: true,
+            grouping: true,
+            aggregation: true,
+        }
+    }
+}
+
+impl Default for SourceCapabilities {
+    fn default() -> Self {
+        Self::none()
     }
 }
 

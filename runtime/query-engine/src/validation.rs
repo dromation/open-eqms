@@ -8,6 +8,9 @@ use crate::types::{
 
 /// Validates a query definition against local structural rules only.
 pub fn validate_query_definition(query: &QueryDefinition) -> QueryEngineResult<()> {
+    if query.source.is_empty() {
+        return Err(malformed_query(ValidationError::EmptyQuerySource));
+    }
     validate_temporal_scope(&query.temporal_scope)?;
     if let Some(predicate) = &query.predicate {
         validate_predicate_shape(predicate)?;

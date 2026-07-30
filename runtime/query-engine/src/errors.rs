@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use crate::types::{QuerySourceRef, SourceCapability};
+
 /// Result type returned by Query Engine contract and validation APIs.
 pub type QueryEngineResult<T> = Result<T, QueryEngineError>;
 
@@ -18,6 +20,18 @@ pub enum QueryEngineError {
         /// Invalid field reference.
         field: String,
     },
+    /// Query source could not be matched to the supplied source contract.
+    UnknownSource {
+        /// Unknown source reference.
+        source: QuerySourceRef,
+    },
+    /// Query requires a capability not declared by the source.
+    UnsupportedCapability {
+        /// Source whose contract was checked.
+        source: QuerySourceRef,
+        /// Unsupported query capability.
+        capability: SourceCapability,
+    },
 }
 
 impl fmt::Display for QueryEngineError {
@@ -25,6 +39,13 @@ impl fmt::Display for QueryEngineError {
         match self {
             Self::MalformedQuery { failure } => write!(formatter, "malformed query: {failure}"),
             Self::InvalidField { field } => write!(formatter, "invalid query field: {field}"),
+            Self::UnknownSource { source } => write!(formatter, "unknown query source: {source}"),
+            Self::UnsupportedCapability { source, capability } => {
+                write!(
+                    formatter,
+                    "query source {source} does not support {capability}"
+                )
+            }
         }
     }
 }
@@ -34,6 +55,8 @@ impl std::error::Error for QueryEngineError {}
 /// Machine-distinguishable query validation failure detail.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ValidationError {
+    /// Query source token must be non-empty.
+    EmptyQuerySource,
     /// Traversal depth must be greater than zero.
     EmptyTraversalDepth,
     /// Traversal relation type token must be non-empty.
@@ -63,6 +86,7 @@ pub enum ValidationError {
 impl fmt::Display for ValidationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::EmptyQuerySource => formatter.write_str("query source must not be empty"),
             Self::EmptyTraversalDepth => {
                 formatter.write_str("traversal max depth must be greater than zero")
             }
@@ -103,4 +127,17 @@ pub(crate) fn invalid_field(field: impl Into<String>) -> QueryEngineError {
     QueryEngineError::InvalidField {
         field: field.into(),
     }
+}
+
+/// Wraps an unknown source reference in the top-level error taxonomy.
+pub(crate) fn unknown_source(source: QuerySourceRef) -> QueryEngineError {
+    QueryEngineError::UnknownSource { source }
+}
+
+/// Wraps an unsupported source capability in the top-level error taxonomy.
+pub(crate) fn unsupported_capability(
+    source: QuerySourceRef,
+    capability: SourceCapability,
+) -> QueryEngineError {
+    QueryEngineError::UnsupportedCapability { source, capability }
 }

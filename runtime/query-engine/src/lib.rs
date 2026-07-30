@@ -15,15 +15,18 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod capabilities;
 pub mod errors;
 pub mod types;
 pub mod validation;
 
+pub use crate::capabilities::{validate_query_source_contract, QuerySourceProvider};
 pub use crate::errors::{QueryEngineError, QueryEngineResult, ValidationError};
 pub use crate::types::{
     AggregationFunction, AggregationSpec, GroupSpec, PartialResultPolicy, Predicate,
-    PresentationType, Projection, QueryDefinition, QuerySchema, SortDirection, SortSpec,
-    TemporalScope, TraversalDirection, TraversalSpec,
+    PresentationType, Projection, QueryDefinition, QuerySchema, QuerySourceRef, SortDirection,
+    SortSpec, SourceCapabilities, SourceCapability, TemporalScope, TraversalDirection,
+    TraversalSpec,
 };
 
 #[cfg(test)]
