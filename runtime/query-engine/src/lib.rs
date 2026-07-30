@@ -14,3 +14,16 @@
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
+
+pub mod errors;
+pub mod types;
+pub mod validation;
+
+pub use crate::errors::{QueryEngineError, QueryEngineResult, ValidationError};
+pub use crate::types::{
+    PartialResultPolicy, PresentationType, QueryDefinition, TemporalScope, TraversalDirection,
+    TraversalSpec,
+};
+
+#[cfg(test)]
+mod tests;
