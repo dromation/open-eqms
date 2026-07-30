@@ -497,3 +497,191 @@ fn cancellation_state_is_one_shot_and_clone_visible() {
         Err(QueryEngineError::Cancelled)
     ));
 }
+
+fn production_sources() -> [(&'static str, &'static str); 7] {
+    [
+        ("capabilities.rs", include_str!("capabilities.rs")),
+        ("errors.rs", include_str!("errors.rs")),
+        ("lib.rs", include_str!("lib.rs")),
+        ("limits.rs", include_str!("limits.rs")),
+        ("ordering.rs", include_str!("ordering.rs")),
+        ("types.rs", include_str!("types.rs")),
+        ("validation.rs", include_str!("validation.rs")),
+    ]
+}
+
+#[test]
+fn crate_manifest_depends_only_on_runtime_contracts() {
+    let manifest = include_str!("../Cargo.toml");
+
+    assert!(manifest.contains("open-eqms-runtime-contracts"));
+    for forbidden_dependency in [
+        "open-eqms-object-runtime",
+        "open-eqms-event-engine",
+        "open-eqms-transaction-engine",
+    ] {
+        assert!(
+            !manifest.contains(forbidden_dependency),
+            "forbidden dependency found: {forbidden_dependency}"
+        );
+    }
+
+    let dependency_lines = manifest
+        .lines()
+        .skip_while(|line| *line != "[dependencies]")
+        .skip(1)
+        .take_while(|line| !line.starts_with('['))
+        .filter(|line| !line.trim().is_empty())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        dependency_lines,
+        ["open-eqms-runtime-contracts = { path = \"../runtime-contracts\" }"]
+    );
+}
+
+#[test]
+fn production_sources_have_no_engine_adapter_dependencies_or_calls() {
+    for (file, source) in production_sources() {
+        for forbidden in [
+            "open_eqms_object_runtime",
+            "open_eqms_event_engine",
+            "open_eqms_transaction_engine",
+            "open-eqms-object-runtime",
+            "open-eqms-event-engine",
+            "open-eqms-transaction-engine",
+            "read_object",
+            "read_event",
+            "read_transaction",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "{file} contains forbidden integration token {forbidden}"
+            );
+        }
+    }
+}
+
+#[test]
+fn public_surface_has_no_executor_registration_storage_or_planner_contract() {
+    let lib = include_str!("lib.rs");
+    let capabilities = include_str!("capabilities.rs");
+    let source = [lib, capabilities].join("\n");
+
+    for forbidden_public_form in [
+        "pub struct QueryEngine",
+        "pub enum QueryEngine",
+        "pub trait QueryEngine",
+        "pub fn execute",
+        "pub fn register",
+        "pub fn plan",
+        "pub mod planner",
+        "pub mod executor",
+        "pub mod storage",
+    ] {
+        assert!(
+            !source.contains(forbidden_public_form),
+            "forbidden public surface found: {forbidden_public_form}"
+        );
+    }
+}
+
+#[test]
+fn deferred_contracts_are_not_present_as_public_placeholders() {
+    for (file, source) in production_sources() {
+        for forbidden_public_form in [
+            "pub trait PermissionProvider",
+            "pub struct PermissionProvider",
+            "pub struct ContextPackage",
+            "pub enum ContextPackage",
+            "pub mod context_package",
+            "pub struct SavedQuery",
+            "pub enum SavedQuery",
+            "pub type SavedQuery",
+            "pub struct Cursor",
+            "pub enum Cursor",
+            "pub type Cursor",
+            "pub struct ContinuationToken",
+            "pub enum ContinuationToken",
+            "pub type ContinuationToken",
+            "pub struct ConsistencyBoundary",
+            "pub enum ConsistencyBoundary",
+            "pub type ConsistencyBoundary",
+        ] {
+            assert!(
+                !source.contains(forbidden_public_form),
+                "{file} contains deferred placeholder {forbidden_public_form}"
+            );
+        }
+    }
+}
+
+#[test]
+fn error_taxonomy_excludes_deferred_error_variants() {
+    let errors = include_str!("errors.rs");
+
+    for forbidden_error in [
+        "PermissionDenied",
+        "ConsistencyBoundaryUnavailable",
+        "Cursor",
+        "ContinuationToken",
+        "SourceUnavailable",
+        "IncompleteExecution",
+        "ExecutionStrategyUnavailable",
+    ] {
+        assert!(
+            !errors.contains(forbidden_error),
+            "forbidden deferred error variant found: {forbidden_error}"
+        );
+    }
+}
+
+#[test]
+fn canonical_semantics_do_not_define_public_hash_contract() {
+    for (file, source) in production_sources() {
+        for forbidden_hash_surface in [
+            "pub struct QueryHash",
+            "pub enum QueryHash",
+            "pub type QueryHash",
+            "DefaultHasher",
+            "Sha256",
+            "hash_query",
+        ] {
+            assert!(
+                !source.contains(forbidden_hash_surface),
+                "{file} contains forbidden hash surface {forbidden_hash_surface}"
+            );
+        }
+    }
+}
+
+#[test]
+fn contract_validation_accepts_full_slices_without_data_access() {
+    let mut projection = BTreeSet::new();
+    projection.insert("status".to_owned());
+    projection.insert("score".to_owned());
+    let mut group_fields = BTreeSet::new();
+    group_fields.insert("status".to_owned());
+    let provider = SyntheticSource::new(SourceCapabilities::all());
+    let definition = query()
+        .with_predicate(Predicate::Or(vec![
+            Predicate::Exists {
+                field: "status".to_owned(),
+            },
+            Predicate::Range {
+                field: "score".to_owned(),
+                lower: Some(PropertyValue::Number(1.0)),
+                upper: Some(PropertyValue::Number(9.0)),
+            },
+        ]))
+        .with_projection(Projection::SelectedFields(projection))
+        .with_sort(vec![SortSpec::new("created_at", SortDirection::Ascending)])
+        .with_group(GroupSpec::new(group_fields))
+        .with_aggregations(vec![AggregationSpec::new(
+            AggregationFunction::Count,
+            None,
+            "row_count",
+        )])
+        .with_execution_limits(ExecutionLimits::new(Some(100), Some(1_000), None).unwrap());
+
+    validate_query_source_contract(&provider, &definition).unwrap();
+}
