@@ -1,8 +1,9 @@
 [workspace]
 members = [
-    "runtime/object-runtime",
-    "runtime/runtime-contracts",
     "runtime/event-engine",
+    "runtime/object-runtime",
+    "runtime/query-engine",
+    "runtime/runtime-contracts",
     "runtime/transaction-engine",
 ]
 resolver = "2"

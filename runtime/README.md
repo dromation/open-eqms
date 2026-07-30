@@ -12,5 +12,6 @@ Current approved crates:
 - `runtime/object-runtime` — SPEC-001 Object Runtime.
 - `runtime/event-engine` — SPEC-002 Event Engine.
 - `runtime/transaction-engine` — SPEC-003 Transaction Engine.
+- `runtime/query-engine` — SPEC-004 Query Engine (partial implementation: query model, validation, capability contracts, deterministic ordering, and error/limits/cancellation types only — no real engine adapters, execution, or permission enforcement yet).
 
 The Runtime must preserve deterministic behavior, offline-first operation, auditability, immutable facts, localization, and the Runtime / Content Package / Plugin boundary.

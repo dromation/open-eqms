@@ -19,6 +19,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-eqms-query-engine"
+version = "0.1.0"
+dependencies = [
+ "open-eqms-runtime-contracts",
+]
+
+[[package]]
 name = "open-eqms-runtime-contracts"
 version = "0.1.0"
 
