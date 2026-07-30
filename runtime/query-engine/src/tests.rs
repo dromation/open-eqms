@@ -402,3 +402,98 @@ fn canonical_semantic_record_excludes_operational_fields() {
         canonical_semantic_record_bytes(&second.stable_key, &second.semantic_fields)
     );
 }
+
+#[test]
+fn execution_limits_are_part_of_query_validation() {
+    let limits = ExecutionLimits::new(
+        Some(100),
+        Some(1_000),
+        Some(QueryTimeout::from_millis(250).unwrap()),
+    )
+    .unwrap();
+    let definition = query().with_execution_limits(limits);
+
+    validate_query_definition(&definition).unwrap();
+    assert_eq!(definition.execution_limits, limits);
+}
+
+#[test]
+fn zero_execution_controls_are_malformed_query_values() {
+    let zero_result_limit = query().with_execution_limits(ExecutionLimits {
+        max_result_count: Some(0),
+        max_evaluation_steps: None,
+        timeout: None,
+    });
+    assert!(matches!(
+        validate_query_definition(&zero_result_limit),
+        Err(QueryEngineError::MalformedQuery {
+            failure: ValidationError::ZeroResultLimit
+        })
+    ));
+
+    let zero_step_limit = query().with_execution_limits(ExecutionLimits {
+        max_result_count: None,
+        max_evaluation_steps: Some(0),
+        timeout: None,
+    });
+    assert!(matches!(
+        validate_query_definition(&zero_step_limit),
+        Err(QueryEngineError::MalformedQuery {
+            failure: ValidationError::ZeroEvaluationStepLimit
+        })
+    ));
+
+    assert!(matches!(
+        QueryTimeout::from_millis(0),
+        Err(QueryEngineError::MalformedQuery {
+            failure: ValidationError::ZeroTimeout
+        })
+    ));
+}
+
+#[test]
+fn limit_helpers_return_distinct_limit_errors() {
+    let limits = ExecutionLimits::new(Some(2), Some(10), None).unwrap();
+
+    assert!(matches!(
+        ensure_result_count_within_limit(&limits, 3),
+        Err(QueryEngineError::ExecutionLimitExceeded {
+            limit: ExecutionLimitKind::ResultCount
+        })
+    ));
+    assert!(matches!(
+        ensure_evaluation_steps_within_limit(&limits, 11),
+        Err(QueryEngineError::ExecutionLimitExceeded {
+            limit: ExecutionLimitKind::EvaluationSteps
+        })
+    ));
+    ensure_result_count_within_limit(&limits, 2).unwrap();
+    ensure_evaluation_steps_within_limit(&limits, 10).unwrap();
+}
+
+#[test]
+fn timeout_representation_is_deterministic_and_not_wall_clock_based() {
+    let timeout = QueryTimeout::from_millis(250).unwrap();
+
+    ensure_timeout_not_elapsed(timeout, 250).unwrap();
+    assert!(matches!(
+        ensure_timeout_not_elapsed(timeout, 251),
+        Err(QueryEngineError::Timeout { timeout: observed }) if observed == timeout
+    ));
+}
+
+#[test]
+fn cancellation_state_is_one_shot_and_clone_visible() {
+    let cancellation = CancellationState::new();
+    let clone = cancellation.clone();
+
+    cancellation.check_cancelled().unwrap();
+    clone.request_cancel();
+
+    assert!(cancellation.is_cancelled());
+    assert!(clone.is_cancelled());
+    assert!(matches!(
+        cancellation.check_cancelled(),
+        Err(QueryEngineError::Cancelled)
+    ));
+}

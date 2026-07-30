@@ -1,6 +1,7 @@
 //! Structural validation for query definitions.
 
 use crate::errors::{invalid_field, malformed_query, QueryEngineResult, ValidationError};
+use crate::limits::validate_execution_limits;
 use crate::types::{
     AggregationFunction, AggregationSpec, GroupSpec, Predicate, Projection, QueryDefinition,
     QuerySchema, SortSpec, TemporalScope, TraversalSpec,
@@ -24,6 +25,7 @@ pub fn validate_query_definition(query: &QueryDefinition) -> QueryEngineResult<(
     if let Some(traversal) = &query.traversal {
         validate_traversal_spec(traversal)?;
     }
+    validate_execution_limits(&query.execution_limits)?;
     Ok(())
 }
 

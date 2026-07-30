@@ -3,6 +3,8 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
+use crate::limits::ExecutionLimits;
+
 pub use open_eqms_runtime_contracts::{PropertyValue, PropertyValueKind};
 
 /// Structured query definition for finite one-shot queries.
@@ -28,10 +30,12 @@ pub struct QueryDefinition {
     pub partial_result_policy: PartialResultPolicy,
     /// Caller-requested presentation shape for the result.
     pub presentation_type: PresentationType,
+    /// Execution controls for finite one-shot evaluation.
+    pub execution_limits: ExecutionLimits,
 }
 
 impl QueryDefinition {
-    /// Creates a new query definition without execution controls.
+    /// Creates a new query definition with unbounded execution controls.
     pub fn new(
         source: QuerySourceRef,
         temporal_scope: TemporalScope,
@@ -50,6 +54,7 @@ impl QueryDefinition {
             traversal,
             partial_result_policy,
             presentation_type,
+            execution_limits: ExecutionLimits::unbounded(),
         }
     }
 
@@ -80,6 +85,12 @@ impl QueryDefinition {
     /// Replaces the aggregation specifications.
     pub fn with_aggregations(mut self, aggregations: Vec<AggregationSpec>) -> Self {
         self.aggregations = aggregations;
+        self
+    }
+
+    /// Replaces the execution controls.
+    pub fn with_execution_limits(mut self, execution_limits: ExecutionLimits) -> Self {
+        self.execution_limits = execution_limits;
         self
     }
 }

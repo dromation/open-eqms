@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+use crate::limits::{ExecutionLimitKind, QueryTimeout};
 use crate::types::{QuerySourceRef, SourceCapability};
 
 /// Result type returned by Query Engine contract and validation APIs.
@@ -32,6 +33,18 @@ pub enum QueryEngineError {
         /// Unsupported query capability.
         capability: SourceCapability,
     },
+    /// Query execution limit was exceeded.
+    ExecutionLimitExceeded {
+        /// Exceeded limit kind.
+        limit: ExecutionLimitKind,
+    },
+    /// Query timed out.
+    Timeout {
+        /// Timeout representation that was exceeded.
+        timeout: QueryTimeout,
+    },
+    /// Query was cancelled before finite one-shot completion.
+    Cancelled,
 }
 
 impl fmt::Display for QueryEngineError {
@@ -46,6 +59,17 @@ impl fmt::Display for QueryEngineError {
                     "query source {source} does not support {capability}"
                 )
             }
+            Self::ExecutionLimitExceeded { limit } => {
+                write!(formatter, "query execution limit exceeded: {limit}")
+            }
+            Self::Timeout { timeout } => {
+                write!(
+                    formatter,
+                    "query timed out after {} ms",
+                    timeout.milliseconds()
+                )
+            }
+            Self::Cancelled => formatter.write_str("query cancelled"),
         }
     }
 }
@@ -81,6 +105,12 @@ pub enum ValidationError {
     MissingAggregationField,
     /// Count aggregation must not supply an input field.
     UnexpectedAggregationField,
+    /// Result limit must be greater than zero when supplied.
+    ZeroResultLimit,
+    /// Evaluation step limit must be greater than zero when supplied.
+    ZeroEvaluationStepLimit,
+    /// Timeout must be greater than zero when supplied.
+    ZeroTimeout,
 }
 
 impl fmt::Display for ValidationError {
@@ -113,6 +143,11 @@ impl fmt::Display for ValidationError {
             Self::UnexpectedAggregationField => {
                 formatter.write_str("count aggregation must not supply an input field")
             }
+            Self::ZeroResultLimit => formatter.write_str("result limit must be greater than zero"),
+            Self::ZeroEvaluationStepLimit => {
+                formatter.write_str("evaluation step limit must be greater than zero")
+            }
+            Self::ZeroTimeout => formatter.write_str("timeout must be greater than zero"),
         }
     }
 }
@@ -140,4 +175,19 @@ pub(crate) fn unsupported_capability(
     capability: SourceCapability,
 ) -> QueryEngineError {
     QueryEngineError::UnsupportedCapability { source, capability }
+}
+
+/// Wraps an execution limit violation in the top-level error taxonomy.
+pub(crate) fn execution_limit_exceeded(limit: ExecutionLimitKind) -> QueryEngineError {
+    QueryEngineError::ExecutionLimitExceeded { limit }
+}
+
+/// Wraps a timeout violation in the top-level error taxonomy.
+pub(crate) fn timeout_elapsed(timeout: QueryTimeout) -> QueryEngineError {
+    QueryEngineError::Timeout { timeout }
+}
+
+/// Returns the top-level cancellation error.
+pub(crate) fn cancelled() -> QueryEngineError {
+    QueryEngineError::Cancelled
 }
