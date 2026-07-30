@@ -1,7 +1,11 @@
 use super::*;
 use crate::capabilities::{validate_query_source_contract, QuerySourceProvider};
+use crate::ordering::{
+    canonical_query_bytes, canonical_semantic_record_bytes, compare_stable_ordering_keys,
+    semantic_query_equal,
+};
 use crate::validation::{validate_query_definition, validate_query_definition_against_schema};
-use open_eqms_runtime_contracts::{PropertyValue, PropertyValueKind};
+use open_eqms_runtime_contracts::{ObjectId, PropertyValue, PropertyValueKind};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
@@ -313,4 +317,88 @@ fn malformed_predicate_and_aggregation_shapes_are_rejected() {
             failure: ValidationError::MissingAggregationField
         })
     ));
+}
+
+#[test]
+fn stable_ordering_keys_sort_deterministically() {
+    let mut keys = [
+        StableOrderingKey::new(vec!["record-b".to_owned(), "002".to_owned()]),
+        StableOrderingKey::new(vec!["record-a".to_owned(), "003".to_owned()]),
+        StableOrderingKey::new(vec!["record-a".to_owned(), "001".to_owned()]),
+    ];
+
+    keys.sort_by(compare_stable_ordering_keys);
+
+    let ordered = keys
+        .iter()
+        .map(|key| key.segments().join(":"))
+        .collect::<Vec<_>>();
+    assert_eq!(ordered, ["record-a:001", "record-a:003", "record-b:002"]);
+}
+
+#[test]
+fn canonical_query_semantics_are_independent_of_set_insertion_order() {
+    let mut first_projection = BTreeSet::new();
+    first_projection.insert("score".to_owned());
+    first_projection.insert("status".to_owned());
+    let mut second_projection = BTreeSet::new();
+    second_projection.insert("status".to_owned());
+    second_projection.insert("score".to_owned());
+
+    let first = query().with_projection(Projection::SelectedFields(first_projection));
+    let second = query().with_projection(Projection::SelectedFields(second_projection));
+
+    assert!(semantic_query_equal(&first, &second));
+    assert_eq!(
+        canonical_query_bytes(&first),
+        canonical_query_bytes(&second)
+    );
+}
+
+#[test]
+fn canonical_query_semantics_detect_real_structural_difference() {
+    let first = query().with_predicate(Predicate::Exists {
+        field: "status".to_owned(),
+    });
+    let second = query().with_predicate(Predicate::Exists {
+        field: "score".to_owned(),
+    });
+
+    assert!(!semantic_query_equal(&first, &second));
+}
+
+#[test]
+fn canonical_semantic_record_excludes_operational_fields() {
+    struct SyntheticRecordFixture {
+        stable_key: StableOrderingKey,
+        semantic_fields: BTreeMap<String, PropertyValue>,
+        execution_token: String,
+        observed_at: String,
+    }
+
+    let first = SyntheticRecordFixture {
+        stable_key: StableOrderingKey::new(vec!["record-001".to_owned()]),
+        semantic_fields: BTreeMap::from([
+            ("score".to_owned(), PropertyValue::Number(5.0)),
+            (
+                "owner".to_owned(),
+                PropertyValue::Reference(ObjectId::new("object-001")),
+            ),
+        ]),
+        execution_token: "run-001".to_owned(),
+        observed_at: "2026-07-15T10:00:00Z".to_owned(),
+    };
+    let second = SyntheticRecordFixture {
+        stable_key: first.stable_key.clone(),
+        semantic_fields: first.semantic_fields.clone(),
+        execution_token: "run-002".to_owned(),
+        observed_at: "2026-07-15T11:00:00Z".to_owned(),
+    };
+
+    assert_ne!(first.execution_token, second.execution_token);
+    assert_ne!(first.observed_at, second.observed_at);
+    assert_eq!(
+        canonical_semantic_record_bytes(&first.stable_key, &first.semantic_fields),
+        canonical_semantic_record_bytes(&second.stable_key, &second.semantic_fields)
+    );
 }

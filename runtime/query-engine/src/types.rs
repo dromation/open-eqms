@@ -197,6 +197,29 @@ impl Default for SourceCapabilities {
     }
 }
 
+/// Deterministic in-memory ordering key for query result ordering tests and contracts.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct StableOrderingKey {
+    segments: Vec<String>,
+}
+
+impl StableOrderingKey {
+    /// Creates a stable ordering key from opaque ordered segments.
+    pub fn new(segments: Vec<String>) -> Self {
+        Self { segments }
+    }
+
+    /// Returns the ordered key segments.
+    pub fn segments(&self) -> &[String] {
+        &self.segments
+    }
+
+    /// Reports whether the key has no segments.
+    pub fn is_empty(&self) -> bool {
+        self.segments.is_empty()
+    }
+}
+
 /// Caller-supplied schema description used for structural field validation.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct QuerySchema {

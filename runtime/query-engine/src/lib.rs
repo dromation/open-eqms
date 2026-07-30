@@ -17,6 +17,8 @@
 
 pub mod capabilities;
 pub mod errors;
+#[cfg(test)]
+mod ordering;
 pub mod types;
 pub mod validation;
 
@@ -25,8 +27,8 @@ pub use crate::errors::{QueryEngineError, QueryEngineResult, ValidationError};
 pub use crate::types::{
     AggregationFunction, AggregationSpec, GroupSpec, PartialResultPolicy, Predicate,
     PresentationType, Projection, QueryDefinition, QuerySchema, QuerySourceRef, SortDirection,
-    SortSpec, SourceCapabilities, SourceCapability, TemporalScope, TraversalDirection,
-    TraversalSpec,
+    SortSpec, SourceCapabilities, SourceCapability, StableOrderingKey, TemporalScope,
+    TraversalDirection, TraversalSpec,
 };
 
 #[cfg(test)]
