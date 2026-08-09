@@ -1,4 +1,5 @@
 use crate::asset_model::{
+    asset_calibration_accepted_event_type_ref, asset_calibration_performed_event_type_ref,
     asset_event_type_definitions, asset_object_type_definition, asset_object_type_ref,
     asset_registered_event_type_ref, register_event_metadata, register_object_metadata,
     ASSET_CALIBRATION_ACCEPTED_EVENT_TYPE_NAME, ASSET_CALIBRATION_PERFORMED_EVENT_TYPE_NAME,
@@ -11,7 +12,7 @@ use crate::ids::{
     DeterministicTransactionIds,
 };
 use crate::outcome::{ConsistencyStatus, StepId};
-use crate::scenario::{DemoApp, RegisterAssetInput};
+use crate::scenario::{DemoApp, RecordCalibrationInput, RegisterAssetInput};
 use crate::storage::{DemoEventStore, DemoObjectAndTransactionStore};
 use open_eqms_event_engine::errors::{
     EventEngineError, EventEngineResult, MetadataError as EventMetadataError,
@@ -242,6 +243,15 @@ fn text_property_value(record: &ObjectRecord, name: &str) -> String {
         | PropertyValue::EnumValue(value) => value.clone(),
         value => panic!("unexpected property kind for {name}: {value:?}"),
     }
+}
+
+fn register_demo_asset(app: &mut DemoApp) -> (ObjectId, TransactionId) {
+    let registration = app.register_asset(RegisterAssetInput::demo());
+    assert_eq!(registration.consistency_status, ConsistencyStatus::Complete);
+    (
+        registration.created_object_id.unwrap(),
+        registration.created_transaction_ids[0].clone(),
+    )
 }
 
 #[test]
@@ -618,4 +628,122 @@ fn registration_transaction_failure_returns_partial_outcome_with_existing_record
     assert!(report.contains("created_object_id: asset-0001"));
     assert!(report.contains("created_event_ids: event-0001"));
     assert!(report.contains("created_transaction_ids: none"));
+}
+
+#[test]
+fn record_calibration_accepted_appends_events_level2_transaction_and_updates_asset() {
+    let mut app = DemoApp::new();
+    let (asset_id, registration_transaction_id) = register_demo_asset(&mut app);
+
+    let outcome = app.record_calibration(RecordCalibrationInput::accepted(asset_id.clone()));
+
+    assert_eq!(outcome.consistency_status, ConsistencyStatus::Complete);
+    assert_eq!(outcome.created_event_ids.len(), 2);
+    assert_eq!(outcome.created_transaction_ids.len(), 1);
+
+    let performed = app.read_event(&outcome.created_event_ids[0]).unwrap();
+    let accepted = app.read_event(&outcome.created_event_ids[1]).unwrap();
+    assert_eq!(
+        performed.event_type,
+        asset_calibration_performed_event_type_ref()
+    );
+    assert_eq!(
+        accepted.event_type,
+        asset_calibration_accepted_event_type_ref()
+    );
+    assert!(performed.append_sequence < accepted.append_sequence);
+
+    let calibration_transaction = app
+        .read_transaction(&outcome.created_transaction_ids[0])
+        .unwrap();
+    assert_eq!(calibration_transaction.level, TransactionLevel::Level2);
+    assert_eq!(
+        calibration_transaction.prior_reference,
+        Some(PriorReference::Transaction(registration_transaction_id))
+    );
+    assert_eq!(calibration_transaction.prior_transaction_hash, None);
+    assert!(calibration_transaction.transaction_hash.is_some());
+
+    let asset = app.read_asset(&asset_id).unwrap();
+    assert_eq!(asset.version, Version::new(2));
+    assert_eq!(text_property_value(&asset, "status"), "in_service");
+    assert_eq!(
+        text_property_value(&asset, "next_calibration_due"),
+        "2027-07-15T10:00:00Z"
+    );
+}
+
+#[test]
+fn record_calibration_rejected_appends_only_performed_event() {
+    let mut app = DemoApp::new();
+    let (asset_id, _) = register_demo_asset(&mut app);
+
+    let outcome = app.record_calibration(RecordCalibrationInput::rejected(asset_id.clone()));
+
+    assert_eq!(outcome.consistency_status, ConsistencyStatus::Complete);
+    assert_eq!(outcome.created_event_ids.len(), 1);
+    assert!(outcome.created_transaction_ids.is_empty());
+
+    let performed = app.read_event(&outcome.created_event_ids[0]).unwrap();
+    assert_eq!(
+        performed.event_type,
+        asset_calibration_performed_event_type_ref()
+    );
+    assert_eq!(
+        performed.payload.get("outcome"),
+        Some(&PropertyValue::EnumValue("rejected".to_owned()))
+    );
+
+    let asset = app.read_asset(&asset_id).unwrap();
+    assert_eq!(asset.version, Version::initial());
+    assert_eq!(text_property_value(&asset, "status"), "registered");
+    assert_eq!(app.transaction_count(), 1);
+}
+
+#[test]
+fn record_calibration_before_registration_is_rejected_before_event_or_transaction_append() {
+    let mut app = DemoApp::new();
+
+    let outcome = app.record_calibration(RecordCalibrationInput::accepted(ObjectId::new(
+        "asset-0001",
+    )));
+
+    assert_eq!(
+        outcome.consistency_status,
+        ConsistencyStatus::FailedBeforeMutation
+    );
+    assert_eq!(outcome.failed_step, Some(StepId::ValidateCalibrationInput));
+    assert!(outcome.created_event_ids.is_empty());
+    assert!(outcome.created_transaction_ids.is_empty());
+    assert_eq!(app.object_count(), 0);
+    assert_eq!(app.event_count(), 0);
+    assert_eq!(app.transaction_count(), 0);
+}
+
+#[test]
+fn calibration_transaction_commit_failure_rolls_back_object_update_in_command() {
+    let mut app = DemoApp::new();
+    let (asset_id, _) = register_demo_asset(&mut app);
+    app.fail_next_calibration_transaction_commit();
+
+    let outcome = app.record_calibration(RecordCalibrationInput::accepted(asset_id.clone()));
+
+    assert_eq!(
+        outcome.consistency_status,
+        ConsistencyStatus::PartiallyCompleted
+    );
+    assert_eq!(
+        outcome.failed_step,
+        Some(StepId::CommitCalibrationUnitOfWork)
+    );
+    assert_eq!(outcome.created_event_ids.len(), 2);
+    assert!(outcome.created_transaction_ids.is_empty());
+
+    let asset = app.read_asset(&asset_id).unwrap();
+    assert_eq!(asset.version, Version::initial());
+    assert_eq!(text_property_value(&asset, "status"), "registered");
+    assert_eq!(app.transaction_count(), 1);
+    assert!(outcome
+        .recovery_guidance
+        .contains("Object update is not durably visible"));
 }

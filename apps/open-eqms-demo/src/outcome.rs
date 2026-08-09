@@ -9,6 +9,12 @@ pub enum StepId {
     CreateAssetObject,
     AppendAssetRegisteredEvent,
     AppendRegistrationTransaction,
+    ValidateCalibrationInput,
+    AppendCalibrationPerformedEvent,
+    AppendCalibrationAcceptedEvent,
+    StageCalibrationObjectUpdate,
+    StageCalibrationTransaction,
+    CommitCalibrationUnitOfWork,
 }
 
 impl StepId {
@@ -19,6 +25,12 @@ impl StepId {
             Self::CreateAssetObject => "create_asset_object",
             Self::AppendAssetRegisteredEvent => "append_asset_registered_event",
             Self::AppendRegistrationTransaction => "append_registration_transaction",
+            Self::ValidateCalibrationInput => "validate_calibration_input",
+            Self::AppendCalibrationPerformedEvent => "append_calibration_performed_event",
+            Self::AppendCalibrationAcceptedEvent => "append_calibration_accepted_event",
+            Self::StageCalibrationObjectUpdate => "stage_calibration_object_update",
+            Self::StageCalibrationTransaction => "stage_calibration_transaction",
+            Self::CommitCalibrationUnitOfWork => "commit_calibration_unit_of_work",
         }
     }
 }

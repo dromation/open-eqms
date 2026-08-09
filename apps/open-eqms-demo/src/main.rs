@@ -34,6 +34,18 @@ fn main() {
                 i32::from(!outcome.is_complete())
             }
         }
+        "record-calibration" => {
+            let mut input =
+                scenario::RecordCalibrationInput::accepted(ObjectIdArg::default_asset());
+            if let Err(message) = input.apply_overrides(&args[1..]) {
+                eprintln!("{message}");
+                2
+            } else {
+                let outcome = app.record_calibration(input);
+                println!("{}", outcome.to_cli_report());
+                i32::from(!outcome.is_complete())
+            }
+        }
         command => {
             eprintln!("unknown command: {command}");
             print_help();
@@ -43,6 +55,14 @@ fn main() {
 
     if exit_code != 0 {
         std::process::exit(exit_code);
+    }
+}
+
+struct ObjectIdArg;
+
+impl ObjectIdArg {
+    fn default_asset() -> open_eqms_runtime_contracts::ObjectId {
+        open_eqms_runtime_contracts::ObjectId::new("asset-0001")
     }
 }
 
