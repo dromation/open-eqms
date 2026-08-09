@@ -835,3 +835,66 @@ fn show_timeline_filters_out_unrelated_asset_records() {
     assert!(!timeline.contains("event-0004"));
     assert!(!timeline.contains("txn-0003"));
 }
+
+#[test]
+fn run_demo_output_is_byte_identical_for_fixed_inputs() {
+    fn run() -> String {
+        DemoApp::new().run_demo()
+    }
+
+    let first = run();
+    let second = run();
+
+    assert_eq!(first, second);
+    assert!(first.contains("VS-001 traceable asset registration demo"));
+    assert!(first.contains("register-asset outcome"));
+    assert!(first.contains("record-calibration outcome"));
+    assert!(first.contains("show-asset"));
+    assert!(first.contains("show-timeline"));
+    assert!(first.contains("consistency_status: Complete"));
+    assert!(first.contains("event 3 event-0003 asset.calibration_accepted@1"));
+    assert!(first.contains("transaction 2 txn-0002 level=level-2"));
+}
+
+#[test]
+fn application_layers_do_not_bypass_runtime_engine_apis() {
+    let app_layer_sources = [
+        ("asset_model.rs", include_str!("asset_model.rs")),
+        ("clock.rs", include_str!("clock.rs")),
+        ("crypto.rs", include_str!("crypto.rs")),
+        ("ids.rs", include_str!("ids.rs")),
+        ("main.rs", include_str!("main.rs")),
+        ("outcome.rs", include_str!("outcome.rs")),
+        ("presentation.rs", include_str!("presentation.rs")),
+        ("scenario.rs", include_str!("scenario.rs")),
+    ];
+
+    for (file_name, source) in app_layer_sources {
+        for forbidden in [
+            "ObjectRecord::new",
+            "EventRecord::new",
+            "TransactionRecord::new",
+            "inner.",
+            "lock_object",
+            "lock_event",
+            "lock_transaction",
+            ".objects",
+            "open_eqms_query_engine",
+            "SecurityEngine",
+            "ConsistencyBoundary",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "{file_name} bypasses an engine boundary with {forbidden}"
+            );
+        }
+    }
+
+    let storage_source = include_str!("storage.rs");
+    assert!(storage_source.contains("impl ObjectStorageProvider"));
+    assert!(storage_source.contains("impl EventStorageProvider"));
+    assert!(storage_source.contains("impl TransactionStore"));
+
+    let manifest_source = include_str!("../Cargo.toml");
+    assert!(!manifest_source.contains("open-eqms-query-engine"));
+}

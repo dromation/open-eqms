@@ -79,6 +79,10 @@ fn main() {
                 2
             }
         },
+        "run-demo" => {
+            println!("{}", app.run_demo());
+            0
+        }
         command => {
             eprintln!("unknown command: {command}");
             print_help();
@@ -119,7 +123,7 @@ fn print_help() {
     println!("  record-calibration [--field=value]");
     println!("  show-asset <asset-id>");
     println!("  show-timeline <asset-id>");
-    println!("  run-demo                   (added in a later VS-001 commit)");
+    println!("  run-demo");
     println!(
         "Reads that list history will use direct Event/Transaction range APIs and application-layer filtering pending Query Engine completion."
     );

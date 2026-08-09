@@ -30,6 +30,7 @@ use open_eqms_transaction_engine::{
     AppendTransactionRequest, AppendTransactionResult, TransactionEngine,
 };
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write;
 
 const DEMO_RANGE_READ_LIMIT: usize = 100;
 
@@ -382,6 +383,43 @@ impl DemoApp {
             &events,
             &transactions,
         ))
+    }
+
+    pub fn run_demo(&mut self) -> String {
+        let mut output = String::new();
+        output.push_str("VS-001 traceable asset registration demo\n");
+
+        output.push_str("\nregister-asset outcome\n");
+        let registration = self.register_asset(RegisterAssetInput::demo());
+        let _ = writeln!(output, "{}", registration.to_cli_report());
+
+        let Some(asset_id) = registration.created_object_id.clone() else {
+            output.push_str("\nrecord-calibration skipped: registration did not create an asset\n");
+            return output;
+        };
+
+        output.push_str("\nrecord-calibration outcome\n");
+        let calibration =
+            self.record_calibration(RecordCalibrationInput::accepted(asset_id.clone()));
+        let _ = writeln!(output, "{}", calibration.to_cli_report());
+
+        output.push_str("\nshow-asset\n");
+        match self.show_asset(&asset_id) {
+            Ok(report) => output.push_str(&report),
+            Err(error) => {
+                let _ = writeln!(output, "error: {error}");
+            }
+        }
+
+        output.push_str("\nshow-timeline\n");
+        match self.show_timeline(&asset_id) {
+            Ok(report) => output.push_str(&report),
+            Err(error) => {
+                let _ = writeln!(output, "error: {error}");
+            }
+        }
+
+        output
     }
 
     pub fn read_event(&self, event_id: &EventId) -> Result<EventRecord, String> {
