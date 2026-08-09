@@ -2,6 +2,7 @@ pub mod asset_model;
 pub mod clock;
 pub mod crypto;
 pub mod ids;
+pub mod storage;
 
 #[cfg(test)]
 mod tests;
