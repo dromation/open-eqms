@@ -747,3 +747,91 @@ fn calibration_transaction_commit_failure_rolls_back_object_update_in_command() 
         .recovery_guidance
         .contains("Object update is not durably visible"));
 }
+
+#[test]
+fn show_asset_renders_current_asset_state() {
+    let mut app = DemoApp::new();
+    let (asset_id, _) = register_demo_asset(&mut app);
+    let calibration = app.record_calibration(RecordCalibrationInput::accepted(asset_id.clone()));
+    assert_eq!(calibration.consistency_status, ConsistencyStatus::Complete);
+
+    let report = app.show_asset(&asset_id).unwrap();
+
+    assert!(report.contains("Asset asset-0001"));
+    assert!(report.contains("object_type: asset.equipment@1"));
+    assert!(report.contains("version: 2"));
+    assert!(report.contains("status: in_service"));
+    assert!(report.contains("next_calibration_due: 2027-07-15T10:00:00Z"));
+}
+
+#[test]
+fn show_timeline_ordering_is_deterministic() {
+    fn timeline() -> String {
+        let mut app = DemoApp::new();
+        let (asset_id, _) = register_demo_asset(&mut app);
+        let calibration =
+            app.record_calibration(RecordCalibrationInput::accepted(asset_id.clone()));
+        assert_eq!(calibration.consistency_status, ConsistencyStatus::Complete);
+        app.show_timeline(&asset_id).unwrap()
+    }
+
+    let first = timeline();
+    let second = timeline();
+
+    assert_eq!(first, second);
+    assert!(first.contains("Events (3; bounded Event range read, app-layer filter):"));
+    assert!(first.contains("Transactions (2; bounded Transaction range read, app-layer filter):"));
+
+    let registered_event = first.find("event 1 event-0001 asset.registered@1").unwrap();
+    let performed_event = first
+        .find("event 2 event-0002 asset.calibration_performed@1")
+        .unwrap();
+    let accepted_event = first
+        .find("event 3 event-0003 asset.calibration_accepted@1")
+        .unwrap();
+    assert!(registered_event < performed_event);
+    assert!(performed_event < accepted_event);
+
+    let registration_transaction = first.find("transaction 1 txn-0001 level=level-1").unwrap();
+    let calibration_transaction = first.find("transaction 2 txn-0002 level=level-2").unwrap();
+    assert!(registration_transaction < calibration_transaction);
+    assert!(first.contains("prior_reference: transaction:txn-0001"));
+    assert!(first.contains("transaction_hash: demo-noncrypto-"));
+}
+
+#[test]
+fn show_timeline_filters_out_unrelated_asset_records() {
+    let mut app = DemoApp::new();
+    let (first_asset_id, _) = register_demo_asset(&mut app);
+    let calibration =
+        app.record_calibration(RecordCalibrationInput::accepted(first_asset_id.clone()));
+    assert_eq!(calibration.consistency_status, ConsistencyStatus::Complete);
+
+    let mut second_input = RegisterAssetInput::demo();
+    second_input.identity_label = "Scale B-200".to_owned();
+    second_input.serial_number = "SN-200".to_owned();
+    let second_registration = app.register_asset(second_input);
+    assert_eq!(
+        second_registration.consistency_status,
+        ConsistencyStatus::Complete
+    );
+    assert_eq!(
+        second_registration
+            .created_object_id
+            .as_ref()
+            .unwrap()
+            .as_str(),
+        "asset-0002"
+    );
+
+    let timeline = app.show_timeline(&first_asset_id).unwrap();
+
+    assert!(timeline.contains("event-0001"));
+    assert!(timeline.contains("event-0002"));
+    assert!(timeline.contains("event-0003"));
+    assert!(timeline.contains("txn-0001"));
+    assert!(timeline.contains("txn-0002"));
+    assert!(!timeline.contains("asset-0002"));
+    assert!(!timeline.contains("event-0004"));
+    assert!(!timeline.contains("txn-0003"));
+}

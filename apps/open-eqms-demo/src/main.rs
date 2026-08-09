@@ -3,6 +3,7 @@ pub mod clock;
 pub mod crypto;
 pub mod ids;
 pub mod outcome;
+pub mod presentation;
 pub mod scenario;
 pub mod storage;
 
@@ -46,6 +47,38 @@ fn main() {
                 i32::from(!outcome.is_complete())
             }
         }
+        "show-asset" => match ObjectIdArg::required(args.get(1), "show-asset") {
+            Ok(asset_id) => match app.show_asset(&asset_id) {
+                Ok(report) => {
+                    println!("{report}");
+                    0
+                }
+                Err(message) => {
+                    eprintln!("{message}");
+                    1
+                }
+            },
+            Err(message) => {
+                eprintln!("{message}");
+                2
+            }
+        },
+        "show-timeline" => match ObjectIdArg::required(args.get(1), "show-timeline") {
+            Ok(asset_id) => match app.show_timeline(&asset_id) {
+                Ok(report) => {
+                    println!("{report}");
+                    0
+                }
+                Err(message) => {
+                    eprintln!("{message}");
+                    1
+                }
+            },
+            Err(message) => {
+                eprintln!("{message}");
+                2
+            }
+        },
         command => {
             eprintln!("unknown command: {command}");
             print_help();
@@ -64,15 +97,28 @@ impl ObjectIdArg {
     fn default_asset() -> open_eqms_runtime_contracts::ObjectId {
         open_eqms_runtime_contracts::ObjectId::new("asset-0001")
     }
+
+    fn required(
+        value: Option<&String>,
+        command: &str,
+    ) -> Result<open_eqms_runtime_contracts::ObjectId, String> {
+        let Some(value) = value else {
+            return Err(format!("{command} requires <asset-id>"));
+        };
+        if value.is_empty() {
+            return Err(format!("{command} requires a non-empty <asset-id>"));
+        }
+        Ok(open_eqms_runtime_contracts::ObjectId::new(value))
+    }
 }
 
 fn print_help() {
     println!("{PRE_ALPHA_BANNER}");
     println!("Commands:");
     println!("  register-asset [--field=value]");
-    println!("  show-asset <asset-id>      (added in a later VS-001 commit)");
-    println!("  show-timeline <asset-id>   (added in a later VS-001 commit)");
-    println!("  record-calibration         (added in a later VS-001 commit)");
+    println!("  record-calibration [--field=value]");
+    println!("  show-asset <asset-id>");
+    println!("  show-timeline <asset-id>");
     println!("  run-demo                   (added in a later VS-001 commit)");
     println!(
         "Reads that list history will use direct Event/Transaction range APIs and application-layer filtering pending Query Engine completion."

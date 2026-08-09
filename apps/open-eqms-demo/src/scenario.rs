@@ -12,7 +12,7 @@ use crate::ids::{
 use crate::outcome::{OperationOutcome, StepId};
 use crate::storage::{DemoEventStore, DemoObjectAndTransactionStore};
 use open_eqms_event_engine::types::{
-    CorrelationId, EventId, EventRecord, EventSource, EventTimestamp,
+    AppendSequence, CorrelationId, EventId, EventRecord, EventSource, EventTimestamp,
 };
 use open_eqms_event_engine::{AppendEventRequest, EventEngine};
 use open_eqms_object_runtime::types::{
@@ -23,13 +23,15 @@ use open_eqms_object_runtime::{
 };
 use open_eqms_runtime_contracts::{ObjectId, PropertyValue, UnitOfWork};
 use open_eqms_transaction_engine::types::{
-    ActorRef, DeviceRef, OperationDescriptor, PriorReference, SiteRef, TransactionId,
+    ActorRef, AppendIndex, DeviceRef, OperationDescriptor, PriorReference, SiteRef, TransactionId,
     TransactionLevel, TransactionRecord, TransactionSchemaVersion, TransactionTimestamp,
 };
 use open_eqms_transaction_engine::{
     AppendTransactionRequest, AppendTransactionResult, TransactionEngine,
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+const DEMO_RANGE_READ_LIMIT: usize = 100;
 
 pub type DemoObjectRuntime = ObjectRuntime<DemoObjectAndTransactionStore, DeterministicObjectIds>;
 pub type DemoEventEngine =
@@ -345,6 +347,41 @@ impl DemoApp {
         self.object_runtime
             .read_object(object_id)
             .map_err(|error| error.to_string())
+    }
+
+    pub fn show_asset(&self, object_id: &ObjectId) -> Result<String, String> {
+        let asset = self.read_asset(object_id)?;
+        Ok(crate::presentation::render_asset(&asset))
+    }
+
+    pub fn show_timeline(&self, object_id: &ObjectId) -> Result<String, String> {
+        self.read_asset(object_id)?;
+
+        // VS-001 does not depend on Query Engine execution. Until that boundary
+        // exists, the demo uses bounded Event/Transaction range reads and filters
+        // by Object identity in this app layer.
+        let events = self
+            .event_engine
+            .read_sequence_range(AppendSequence::first(), DEMO_RANGE_READ_LIMIT)
+            .map_err(|error| error.to_string())?
+            .events
+            .into_iter()
+            .filter(|event| event.object_refs.contains(object_id))
+            .collect::<Vec<_>>();
+        let transactions = self
+            .transaction_engine
+            .read_append_index_range(AppendIndex::first(), DEMO_RANGE_READ_LIMIT)
+            .map_err(|error| error.to_string())?
+            .transactions
+            .into_iter()
+            .filter(|transaction| &transaction.object_id == object_id)
+            .collect::<Vec<_>>();
+
+        Ok(crate::presentation::render_timeline(
+            object_id,
+            &events,
+            &transactions,
+        ))
     }
 
     pub fn read_event(&self, event_id: &EventId) -> Result<EventRecord, String> {
