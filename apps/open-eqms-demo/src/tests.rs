@@ -10,6 +10,8 @@ use crate::ids::{
     DeterministicAppendSequences, DeterministicEventIds, DeterministicObjectIds,
     DeterministicTransactionIds,
 };
+use crate::outcome::{ConsistencyStatus, StepId};
+use crate::scenario::{DemoApp, RegisterAssetInput};
 use crate::storage::{DemoEventStore, DemoObjectAndTransactionStore};
 use open_eqms_event_engine::errors::{
     EventEngineError, EventEngineResult, MetadataError as EventMetadataError,
@@ -528,4 +530,92 @@ fn independent_event_store_has_no_unit_of_work_trait_surface() {
     assert!(!event_store_source.contains("stage_event"));
     assert!(!event_store_source.contains("commit_unit_of_work"));
     assert!(!event_store_source.contains("rollback_unit_of_work"));
+}
+
+#[test]
+fn register_asset_command_creates_readable_object_event_and_level1_transaction() {
+    let mut app = DemoApp::new();
+
+    let outcome = app.register_asset(RegisterAssetInput::demo());
+
+    assert_eq!(outcome.consistency_status, ConsistencyStatus::Complete);
+    assert!(outcome.is_complete());
+    assert_eq!(outcome.failed_step, None);
+    let object_id = outcome.created_object_id.clone().unwrap();
+    assert_eq!(object_id.as_str(), "asset-0001");
+
+    let asset = app.read_asset(&object_id).unwrap();
+    assert_eq!(asset.id, object_id);
+    assert_eq!(asset.version, Version::initial());
+    assert_eq!(text_property_value(&asset, "identity_label"), "Scale A-100");
+
+    assert_eq!(outcome.created_event_ids.len(), 1);
+    let event = app.read_event(&outcome.created_event_ids[0]).unwrap();
+    assert_eq!(event.event_type, asset_registered_event_type_ref());
+    assert!(event.object_refs.contains(&asset.id));
+
+    assert_eq!(outcome.created_transaction_ids.len(), 1);
+    let transaction = app
+        .read_transaction(&outcome.created_transaction_ids[0])
+        .unwrap();
+    assert_eq!(transaction.level, TransactionLevel::Level1);
+    assert_eq!(transaction.object_id, asset.id);
+    assert_eq!(transaction.prior_reference, None);
+    assert_eq!(transaction.prior_transaction_hash, None);
+    assert_eq!(transaction.transaction_hash, None);
+}
+
+#[test]
+fn invalid_register_asset_input_is_rejected_before_object_runtime_call() {
+    let mut app = DemoApp::new();
+    let mut input = RegisterAssetInput::demo();
+    input.identity_label.clear();
+
+    let outcome = app.register_asset(input);
+
+    assert_eq!(
+        outcome.consistency_status,
+        ConsistencyStatus::FailedBeforeMutation
+    );
+    assert_eq!(outcome.failed_step, Some(StepId::ValidateAssetInput));
+    assert_eq!(outcome.created_object_id, None);
+    assert!(outcome.created_event_ids.is_empty());
+    assert!(outcome.created_transaction_ids.is_empty());
+    assert_eq!(app.object_count(), 0);
+    assert_eq!(app.event_count(), 0);
+    assert_eq!(app.transaction_count(), 0);
+}
+
+#[test]
+fn registration_transaction_failure_returns_partial_outcome_with_existing_records() {
+    let mut app = DemoApp::new();
+    app.fail_next_registration_transaction_append();
+
+    let outcome = app.register_asset(RegisterAssetInput::demo());
+
+    assert_eq!(
+        outcome.consistency_status,
+        ConsistencyStatus::PartiallyCompleted
+    );
+    assert!(!outcome.is_complete());
+    assert_eq!(
+        outcome.failed_step,
+        Some(StepId::AppendRegistrationTransaction)
+    );
+    assert_eq!(
+        outcome.created_object_id.as_ref().unwrap().as_str(),
+        "asset-0001"
+    );
+    assert_eq!(outcome.created_event_ids.len(), 1);
+    assert!(outcome.created_transaction_ids.is_empty());
+    assert!(!outcome.recovery_guidance.is_empty());
+    assert_eq!(app.object_count(), 1);
+    assert_eq!(app.event_count(), 1);
+    assert_eq!(app.transaction_count(), 0);
+
+    let report = outcome.to_cli_report();
+    assert!(report.contains("consistency_status: PartiallyCompleted"));
+    assert!(report.contains("created_object_id: asset-0001"));
+    assert!(report.contains("created_event_ids: event-0001"));
+    assert!(report.contains("created_transaction_ids: none"));
 }
