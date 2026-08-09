@@ -3,6 +3,16 @@
 version = 4
 
 [[package]]
+name = "open-eqms-demo"
+version = "0.1.0"
+dependencies = [
+ "open-eqms-event-engine",
+ "open-eqms-object-runtime",
+ "open-eqms-runtime-contracts",
+ "open-eqms-transaction-engine",
+]
+
+[[package]]
 name = "open-eqms-event-engine"
 version = "0.1.0"
 dependencies = [

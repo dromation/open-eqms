@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "apps/open-eqms-demo",
     "runtime/event-engine",
     "runtime/object-runtime",
     "runtime/query-engine",

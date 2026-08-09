@@ -1,0 +1,16 @@
+[package]
+name = "open-eqms-demo"
+version = "0.1.0"
+edition = "2021"
+description = "Pre-alpha Open-EQMS asset registration and calibration demo"
+license = "GPL-2.0-only"
+
+[[bin]]
+name = "open-eqms-demo"
+path = "src/main.rs"
+
+[dependencies]
+open-eqms-event-engine = { path = "../../runtime/event-engine" }
+open-eqms-object-runtime = { path = "../../runtime/object-runtime" }
+open-eqms-runtime-contracts = { path = "../../runtime/runtime-contracts" }
+open-eqms-transaction-engine = { path = "../../runtime/transaction-engine" }
