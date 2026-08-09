@@ -1,3 +1,10 @@
+pub mod clock;
+pub mod crypto;
+pub mod ids;
+
+#[cfg(test)]
+mod tests;
+
 const PRE_ALPHA_BANNER: &str =
     "Open-EQMS demo: pre-alpha, local, single-process, non-production reference application.";
 
