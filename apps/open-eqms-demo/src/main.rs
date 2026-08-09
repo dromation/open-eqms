@@ -1,3 +1,4 @@
+pub mod asset_model;
 pub mod clock;
 pub mod crypto;
 pub mod ids;
