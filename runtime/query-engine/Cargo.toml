@@ -2,7 +2,7 @@
 name = "open-eqms-query-engine"
 version = "0.1.0"
 edition = "2021"
-description = "Open-EQMS Query Engine implementation for SPEC-004 (partial: Slices 1-6 only)"
+description = "Open-EQMS Query Engine implementation for SPEC-004"
 license = "GPL-2.0-only"
 
 [lib]

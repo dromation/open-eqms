@@ -1,10 +1,13 @@
 //! Structural validation for query definitions.
 
-use crate::errors::{invalid_field, malformed_query, QueryEngineResult, ValidationError};
+use crate::errors::{
+    invalid_field, invalid_source_record, malformed_query, QueryEngineResult, ValidationError,
+};
 use crate::limits::validate_execution_limits;
 use crate::types::{
     AggregationFunction, AggregationSpec, GroupSpec, Predicate, Projection, QueryDefinition,
-    QuerySchema, SortSpec, TemporalScope, TraversalSpec,
+    QueryExecutionRequest, QueryRecord, QuerySchema, QuerySourceRef, SortSpec, TemporalScope,
+    TraversalSpec,
 };
 
 /// Validates a query definition against local structural rules only.
@@ -44,6 +47,68 @@ pub fn validate_query_definition_against_schema(
         validate_group_fields(group, schema)?;
     }
     validate_aggregation_fields(&query.aggregations, schema)
+}
+
+/// Validates a finite one-shot execution request.
+pub fn validate_query_execution_request(request: &QueryExecutionRequest) -> QueryEngineResult<()> {
+    validate_query_definition(&request.query)?;
+    if request.result_id.is_empty() {
+        return Err(malformed_query(ValidationError::EmptyQueryResultId));
+    }
+    Ok(())
+}
+
+/// Validates one source record against source identity and declared schema.
+pub fn validate_query_record_against_schema(
+    expected_source: &QuerySourceRef,
+    schema: &QuerySchema,
+    record: &QueryRecord,
+) -> QueryEngineResult<()> {
+    if &record.source != expected_source {
+        return Err(invalid_source_record(
+            record.source.clone(),
+            record.record_id.clone(),
+            "record source does not match query source",
+        ));
+    }
+    if record.record_type.is_empty() {
+        return Err(invalid_source_record(
+            record.source.clone(),
+            record.record_id.clone(),
+            "record type must not be empty",
+        ));
+    }
+    if record.record_id.is_empty() {
+        return Err(invalid_source_record(
+            record.source.clone(),
+            record.record_id.clone(),
+            "record identity must not be empty",
+        ));
+    }
+    if record.ordering_key.is_empty() {
+        return Err(invalid_source_record(
+            record.source.clone(),
+            record.record_id.clone(),
+            "stable ordering key must not be empty",
+        ));
+    }
+    for (field, value) in &record.fields {
+        let Some(expected_kind) = schema.fields.get(field) else {
+            return Err(invalid_source_record(
+                record.source.clone(),
+                record.record_id.clone(),
+                format!("record field {field} is not declared by source schema"),
+            ));
+        };
+        if &value.kind() != expected_kind {
+            return Err(invalid_source_record(
+                record.source.clone(),
+                record.record_id.clone(),
+                format!("record field {field} does not match source schema kind"),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn validate_temporal_scope(scope: &TemporalScope) -> QueryEngineResult<()> {

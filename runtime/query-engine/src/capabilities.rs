@@ -1,9 +1,10 @@
 //! Query source capability contracts.
 
 use crate::errors::{unknown_source, unsupported_capability, QueryEngineResult};
+use crate::limits::CancellationState;
 use crate::types::{
-    Projection, QueryDefinition, QuerySchema, QuerySourceRef, SourceCapabilities, SourceCapability,
-    TemporalScope,
+    ConsistencyBoundary, Projection, QueryDefinition, QueryRecord, QuerySchema, QuerySourceRef,
+    SourceCapabilities, SourceCapability, TemporalScope,
 };
 use crate::validation::{validate_query_definition, validate_query_definition_against_schema};
 
@@ -17,6 +18,19 @@ pub trait QuerySourceProvider {
 
     /// Declared field schema for structural validation.
     fn describe_schema(&self) -> QueryEngineResult<QuerySchema>;
+}
+
+/// Read-only executable source contract consumed by the Query Engine executor.
+pub trait ExecutableQuerySourceProvider: QuerySourceProvider {
+    /// Returns the consistency boundary this source can provide for the execution.
+    fn consistency_boundary(&self) -> QueryEngineResult<ConsistencyBoundary>;
+
+    /// Reads a bounded finite set of candidate records from this source.
+    ///
+    /// Implementations must not mutate authoritative Runtime state. They may
+    /// honor cancellation cooperatively before or during record production.
+    fn read_records(&self, cancellation: &CancellationState)
+        -> QueryEngineResult<Vec<QueryRecord>>;
 }
 
 /// Validates that a query is structurally valid and supported by one declared source.

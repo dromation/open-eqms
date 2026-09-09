@@ -1,14 +1,16 @@
-//! Structured Query Engine error taxonomy for the approved partial scope.
+//! Structured Query Engine error taxonomy for SPEC-004.
 
 use std::fmt;
 
 use crate::limits::{ExecutionLimitKind, QueryTimeout};
-use crate::types::{QuerySourceRef, SourceCapability};
+use crate::types::{
+    AuthorizationTarget, ConsistencyBoundaryUnavailableReason, QuerySourceRef, SourceCapability,
+};
 
 /// Result type returned by Query Engine contract and validation APIs.
 pub type QueryEngineResult<T> = Result<T, QueryEngineError>;
 
-/// Top-level structured errors returned by the partial Query Engine contracts.
+/// Top-level structured errors returned by Query Engine contracts.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum QueryEngineError {
     /// Query definition failed structural validation.
@@ -45,6 +47,64 @@ pub enum QueryEngineError {
     },
     /// Query was cancelled before finite one-shot completion.
     Cancelled,
+    /// Authorization provider could not produce a decision.
+    AuthorizationProviderUnavailable {
+        /// Provider-supplied failure message.
+        message: String,
+    },
+    /// Caller is explicitly denied for a directly requested target.
+    PermissionDenied {
+        /// Target that was denied.
+        target: AuthorizationTarget,
+    },
+    /// Query source or computed-value provider could not supply data.
+    SourceUnavailable {
+        /// Source whose provider failed.
+        source: QuerySourceRef,
+        /// Provider-supplied failure message.
+        message: String,
+    },
+    /// A requested consistency-boundary component was unavailable.
+    ConsistencyBoundaryUnavailable {
+        /// Source whose boundary was incomplete.
+        source: QuerySourceRef,
+        /// Structured unavailable reason.
+        reason: ConsistencyBoundaryUnavailableReason,
+    },
+    /// Query source returned a record that violates its declared schema.
+    InvalidSourceRecord {
+        /// Source whose provider returned the invalid record.
+        source: QuerySourceRef,
+        /// Source-local record identity.
+        record_id: String,
+        /// Machine-readable validation reason.
+        reason: String,
+    },
+    /// Execution could not complete and the caller rejected partial results.
+    IncompleteExecution {
+        /// Machine-readable incompleteness reason token.
+        reason: String,
+    },
+    /// SavedQuery replay encountered an incompatible schema version.
+    SavedQuerySchemaVersionMismatch {
+        /// Machine-readable mismatch reason.
+        reason: String,
+    },
+    /// Continuation token is malformed.
+    InvalidCursor {
+        /// Machine-readable cursor failure reason.
+        reason: String,
+    },
+    /// Continuation token is well-formed but expired for this execution boundary.
+    ExpiredCursor {
+        /// Machine-readable cursor expiry reason.
+        reason: String,
+    },
+    /// Requested execution strategy cannot preserve the requested semantics.
+    ExecutionStrategyUnavailable {
+        /// Machine-readable strategy failure reason.
+        reason: String,
+    },
 }
 
 impl fmt::Display for QueryEngineError {
@@ -70,6 +130,43 @@ impl fmt::Display for QueryEngineError {
                 )
             }
             Self::Cancelled => formatter.write_str("query cancelled"),
+            Self::AuthorizationProviderUnavailable { message } => {
+                write!(formatter, "authorization provider unavailable: {message}")
+            }
+            Self::PermissionDenied { target } => write!(
+                formatter,
+                "permission denied for {}:{}:{}",
+                target.source_namespace(),
+                target.object_type(),
+                target.object_identifier()
+            ),
+            Self::SourceUnavailable { source, message } => {
+                write!(formatter, "query source {source} unavailable: {message}")
+            }
+            Self::ConsistencyBoundaryUnavailable { source, reason } => write!(
+                formatter,
+                "query source {source} could not supply consistency boundary: {}",
+                reason.canonical_token()
+            ),
+            Self::InvalidSourceRecord {
+                source,
+                record_id,
+                reason,
+            } => write!(
+                formatter,
+                "query source {source} returned invalid record {record_id}: {reason}"
+            ),
+            Self::IncompleteExecution { reason } => {
+                write!(formatter, "query execution incomplete: {reason}")
+            }
+            Self::SavedQuerySchemaVersionMismatch { reason } => {
+                write!(formatter, "saved query schema-version mismatch: {reason}")
+            }
+            Self::InvalidCursor { reason } => write!(formatter, "invalid cursor: {reason}"),
+            Self::ExpiredCursor { reason } => write!(formatter, "expired cursor: {reason}"),
+            Self::ExecutionStrategyUnavailable { reason } => {
+                write!(formatter, "execution strategy unavailable: {reason}")
+            }
         }
     }
 }
@@ -111,6 +208,8 @@ pub enum ValidationError {
     ZeroEvaluationStepLimit,
     /// Timeout must be greater than zero when supplied.
     ZeroTimeout,
+    /// Query result identity token must be non-empty.
+    EmptyQueryResultId,
 }
 
 impl fmt::Display for ValidationError {
@@ -148,6 +247,9 @@ impl fmt::Display for ValidationError {
                 formatter.write_str("evaluation step limit must be greater than zero")
             }
             Self::ZeroTimeout => formatter.write_str("timeout must be greater than zero"),
+            Self::EmptyQueryResultId => {
+                formatter.write_str("query result identity must not be empty")
+            }
         }
     }
 }
@@ -190,4 +292,32 @@ pub(crate) fn timeout_elapsed(timeout: QueryTimeout) -> QueryEngineError {
 /// Returns the top-level cancellation error.
 pub(crate) fn cancelled() -> QueryEngineError {
     QueryEngineError::Cancelled
+}
+
+/// Wraps an authorization provider failure in the top-level error taxonomy.
+pub(crate) fn authorization_provider_unavailable(message: impl Into<String>) -> QueryEngineError {
+    QueryEngineError::AuthorizationProviderUnavailable {
+        message: message.into(),
+    }
+}
+
+/// Wraps an unavailable consistency boundary in the top-level error taxonomy.
+pub(crate) fn consistency_boundary_unavailable(
+    source: QuerySourceRef,
+    reason: ConsistencyBoundaryUnavailableReason,
+) -> QueryEngineError {
+    QueryEngineError::ConsistencyBoundaryUnavailable { source, reason }
+}
+
+/// Wraps an invalid source record in the top-level error taxonomy.
+pub(crate) fn invalid_source_record(
+    source: QuerySourceRef,
+    record_id: impl Into<String>,
+    reason: impl Into<String>,
+) -> QueryEngineError {
+    QueryEngineError::InvalidSourceRecord {
+        source,
+        record_id: record_id.into(),
+        reason: reason.into(),
+    }
 }

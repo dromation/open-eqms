@@ -1,11 +1,16 @@
-//! Query Engine data contracts for the approved partial SPEC-004 scope.
+//! Query Engine data contracts for SPEC-004.
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 use crate::limits::ExecutionLimits;
 
-pub use open_eqms_runtime_contracts::{PropertyValue, PropertyValueKind};
+pub use open_eqms_runtime_contracts::{
+    AuthorizationEffect, AuthorizationProvider, AuthorizationRequest, AuthorizationTarget,
+    CallerPermissionContext, ConsistencyBoundary, ConsistencyBoundaryUnavailable,
+    ConsistencyBoundaryUnavailableReason, ConsistencySlot, PermissionAction, PropertyValue,
+    PropertyValueKind, StableConsistencyMarker, Version,
+};
 
 /// Structured query definition for finite one-shot queries.
 #[derive(Clone, Debug, PartialEq)]
@@ -236,6 +241,225 @@ impl StableOrderingKey {
 pub struct QuerySchema {
     /// Fields keyed by language-neutral field name.
     pub fields: BTreeMap<String, PropertyValueKind>,
+}
+
+/// Opaque identity for one completed Query Result package.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct QueryResultId(String);
+
+impl QueryResultId {
+    /// Creates a query-result identity from a caller-supplied opaque token.
+    pub fn new(token: impl Into<String>) -> Self {
+        Self(token.into())
+    }
+
+    /// Returns the opaque query-result identity token.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Reports whether the query-result identity token is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl std::fmt::Display for QueryResultId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Request for one finite, one-shot query execution.
+#[derive(Clone, Debug, PartialEq)]
+pub struct QueryExecutionRequest {
+    /// Structured query definition to execute.
+    pub query: QueryDefinition,
+    /// Opaque caller/permission context supplied by Security.
+    pub caller_context: CallerPermissionContext,
+    /// Caller-supplied result identity used for deterministic replay.
+    pub result_id: QueryResultId,
+}
+
+impl QueryExecutionRequest {
+    /// Creates a one-shot execution request.
+    pub fn new(
+        query: QueryDefinition,
+        caller_context: CallerPermissionContext,
+        result_id: QueryResultId,
+    ) -> Self {
+        Self {
+            query,
+            caller_context,
+            result_id,
+        }
+    }
+}
+
+/// Candidate record supplied by a registered query source.
+#[derive(Clone, Debug, PartialEq)]
+pub struct QueryRecord {
+    /// Source reference that produced this record.
+    pub source: QuerySourceRef,
+    /// Source-local record type token.
+    pub record_type: String,
+    /// Source-local record identity token.
+    pub record_id: String,
+    /// Deterministic source-provided ordering key.
+    pub ordering_key: StableOrderingKey,
+    /// Queryable fields keyed by language-neutral field name.
+    pub fields: BTreeMap<String, PropertyValue>,
+    /// Relevant source timestamps keyed by language-neutral timestamp name.
+    pub timestamps: BTreeMap<String, String>,
+    /// Optional source revision or version marker.
+    pub source_version: Option<Version>,
+    /// Optional permission-scope token for provenance.
+    pub permission_scope: Option<String>,
+    /// Optional source integrity token.
+    pub integrity: Option<String>,
+    /// Classification assigned by the source provider and preserved by Query Engine.
+    pub classification: ResultClassification,
+}
+
+impl QueryRecord {
+    /// Creates a source-fact record from required source, type, identity, ordering, and fields.
+    pub fn source_fact(
+        source: QuerySourceRef,
+        record_type: impl Into<String>,
+        record_id: impl Into<String>,
+        ordering_key: StableOrderingKey,
+        fields: BTreeMap<String, PropertyValue>,
+    ) -> Self {
+        Self {
+            source,
+            record_type: record_type.into(),
+            record_id: record_id.into(),
+            ordering_key,
+            fields,
+            timestamps: BTreeMap::new(),
+            source_version: None,
+            permission_scope: None,
+            integrity: None,
+            classification: ResultClassification::SourceFact,
+        }
+    }
+
+    /// Returns a copy with timestamp provenance replaced.
+    pub fn with_timestamps(mut self, timestamps: BTreeMap<String, String>) -> Self {
+        self.timestamps = timestamps;
+        self
+    }
+
+    /// Returns a copy with a source version marker attached.
+    pub fn with_source_version(mut self, source_version: Version) -> Self {
+        self.source_version = Some(source_version);
+        self
+    }
+
+    /// Returns a copy with a permission-scope provenance token attached.
+    pub fn with_permission_scope(mut self, permission_scope: impl Into<String>) -> Self {
+        self.permission_scope = Some(permission_scope.into());
+        self
+    }
+
+    /// Returns a copy with a source integrity token attached.
+    pub fn with_integrity(mut self, integrity: impl Into<String>) -> Self {
+        self.integrity = Some(integrity.into());
+        self
+    }
+
+    /// Returns a copy with a non-default classification.
+    pub fn with_classification(mut self, classification: ResultClassification) -> Self {
+        self.classification = classification;
+        self
+    }
+
+    /// Builds the neutral authorization target for this source record.
+    pub fn authorization_target(&self) -> AuthorizationTarget {
+        AuthorizationTarget::new(&self.source.0, &self.record_type, &self.record_id)
+    }
+}
+
+/// Classification carried by every result item.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum ResultClassification {
+    /// Direct record from an authoritative source.
+    SourceFact,
+    /// Value already computed by a registered source.
+    ComputedValue,
+    /// Statistical relationship that must never be treated as causation.
+    StatisticalCorrelation,
+    /// AI-generated hypothesis supplied by an upstream adapter and preserved as such.
+    AiGeneratedHypothesis,
+    /// Human-approved conclusion supplied by an authoritative source.
+    HumanApprovedConclusion,
+}
+
+/// Provenance envelope attached to one normalized result item.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResultProvenance {
+    /// Query source that supplied the contributing records.
+    pub source: QuerySourceRef,
+    /// Source-local record type, when a single type describes the contribution.
+    pub source_record_type: Option<String>,
+    /// Source-local record identities that contributed to the result item.
+    pub source_record_ids: BTreeSet<String>,
+    /// Query definition applied to produce this result item.
+    pub query_definition: QueryDefinition,
+    /// Relevant source timestamps retained from contributing records.
+    pub timestamps: BTreeMap<String, String>,
+    /// Optional source revision or version marker.
+    pub source_version: Option<Version>,
+    /// Optional permission-scope provenance token.
+    pub permission_scope: Option<String>,
+    /// Optional source integrity token.
+    pub integrity: Option<String>,
+    /// Optional access-restriction token disclosed by policy-aware sources.
+    pub access_restriction: Option<String>,
+}
+
+/// One normalized result item.
+#[derive(Clone, Debug, PartialEq)]
+pub struct QueryResultItem {
+    /// Deterministic ordering key for this item.
+    pub ordering_key: StableOrderingKey,
+    /// Projected or aggregated result fields.
+    pub fields: BTreeMap<String, PropertyValue>,
+    /// Exactly one classification tag for this item.
+    pub classification: ResultClassification,
+    /// Provenance for the data used to produce this item.
+    pub provenance: ResultProvenance,
+}
+
+/// Completeness state for one finite query execution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum QueryCompleteness {
+    /// All requested source components were available.
+    Complete,
+    /// The result is explicit about incomplete execution.
+    Incomplete {
+        /// Machine-readable incompleteness reason token.
+        reason: String,
+    },
+}
+
+/// Completed finite Query Result package.
+#[derive(Clone, Debug, PartialEq)]
+pub struct QueryResult {
+    /// Immutable result package identity.
+    pub id: QueryResultId,
+    /// Result package version.
+    pub version: Version,
+    /// Query definition executed to produce this result.
+    pub query_definition: QueryDefinition,
+    /// Consistency boundary fixed at the start of execution.
+    pub consistency_boundary: ConsistencyBoundary,
+    /// Presentation type requested for this result package.
+    pub presentation_type: PresentationType,
+    /// Normalized result items.
+    pub items: Vec<QueryResultItem>,
+    /// Completeness state of this execution.
+    pub completeness: QueryCompleteness,
 }
 
 impl QuerySchema {

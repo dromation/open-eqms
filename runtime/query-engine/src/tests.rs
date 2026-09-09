@@ -1,11 +1,20 @@
 use super::*;
-use crate::capabilities::{validate_query_source_contract, QuerySourceProvider};
+use crate::capabilities::{
+    validate_query_source_contract, ExecutableQuerySourceProvider, QuerySourceProvider,
+};
+use crate::execution::canonical_query_result_bytes;
 use crate::ordering::{
     canonical_query_bytes, canonical_semantic_record_bytes, compare_stable_ordering_keys,
     semantic_query_equal,
 };
 use crate::validation::{validate_query_definition, validate_query_definition_against_schema};
-use open_eqms_runtime_contracts::{ObjectId, PropertyValue, PropertyValueKind};
+use open_eqms_runtime_contracts::{
+    AuthorizationDecision, AuthorizationDecisionTrace, AuthorizationEffect, AuthorizationProvider,
+    AuthorizationRequest, ConsistencyBoundary, ConsistencyBoundaryUnavailable,
+    ConsistencyBoundaryUnavailableReason, ConsistencySlot, ObjectId, PropertyValue,
+    PropertyValueKind, StableConsistencyMarker, Version,
+};
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
@@ -35,6 +44,8 @@ struct SyntheticSource {
     source: QuerySourceRef,
     capabilities: SourceCapabilities,
     schema: QuerySchema,
+    records: Vec<QueryRecord>,
+    boundary: ConsistencyBoundary,
 }
 
 impl SyntheticSource {
@@ -43,7 +54,19 @@ impl SyntheticSource {
             source: source_ref(),
             capabilities,
             schema: schema(),
+            records: Vec::new(),
+            boundary: boundary(),
         }
+    }
+
+    fn with_records(mut self, records: Vec<QueryRecord>) -> Self {
+        self.records = records;
+        self
+    }
+
+    fn with_boundary(mut self, boundary: ConsistencyBoundary) -> Self {
+        self.boundary = boundary;
+        self
     }
 }
 
@@ -59,6 +82,107 @@ impl QuerySourceProvider for SyntheticSource {
     fn describe_schema(&self) -> QueryEngineResult<QuerySchema> {
         Ok(self.schema.clone())
     }
+}
+
+impl ExecutableQuerySourceProvider for SyntheticSource {
+    fn consistency_boundary(&self) -> QueryEngineResult<ConsistencyBoundary> {
+        Ok(self.boundary.clone())
+    }
+
+    fn read_records(
+        &self,
+        cancellation: &CancellationState,
+    ) -> QueryEngineResult<Vec<QueryRecord>> {
+        cancellation.check_cancelled()?;
+        Ok(self.records.clone())
+    }
+}
+
+#[derive(Default)]
+struct SyntheticAuthorization {
+    decisions_by_record: BTreeMap<String, AuthorizationEffect>,
+    calls: RefCell<Vec<String>>,
+    failure: Option<String>,
+}
+
+impl SyntheticAuthorization {
+    fn with_decision(mut self, record_id: impl Into<String>, effect: AuthorizationEffect) -> Self {
+        self.decisions_by_record.insert(record_id.into(), effect);
+        self
+    }
+
+    fn failing(message: impl Into<String>) -> Self {
+        Self {
+            failure: Some(message.into()),
+            ..Self::default()
+        }
+    }
+
+    fn calls(&self) -> Vec<String> {
+        self.calls.borrow().clone()
+    }
+}
+
+impl AuthorizationProvider for SyntheticAuthorization {
+    type Error = String;
+
+    fn decide(&self, request: &AuthorizationRequest) -> Result<AuthorizationDecision, Self::Error> {
+        if let Some(message) = &self.failure {
+            return Err(message.clone());
+        }
+
+        let record_id = request.target().object_identifier().to_owned();
+        self.calls.borrow_mut().push(record_id.clone());
+        let effect = self
+            .decisions_by_record
+            .get(&record_id)
+            .copied()
+            .unwrap_or(AuthorizationEffect::Allow);
+
+        Ok(AuthorizationDecision::new(
+            effect,
+            AuthorizationDecisionTrace::new(
+                "policy-v1",
+                format!("decision-{record_id}"),
+                "2026-09-09T08:00:00Z",
+                "synthetic-security",
+                match effect {
+                    AuthorizationEffect::Allow => "allow",
+                    AuthorizationEffect::Deny => "deny",
+                    AuthorizationEffect::HiddenDeny => "hidden-deny",
+                },
+            ),
+        ))
+    }
+}
+
+fn boundary() -> ConsistencyBoundary {
+    ConsistencyBoundary::empty().with_query_definition(ConsistencySlot::Available(
+        StableConsistencyMarker::new("query-definition", "semantic-v1"),
+    ))
+}
+
+fn record(record_id: &str, status: &str, score: f64) -> QueryRecord {
+    QueryRecord::source_fact(
+        source_ref(),
+        "synthetic-record",
+        record_id,
+        StableOrderingKey::new(vec![record_id.to_owned()]),
+        BTreeMap::from([
+            (
+                "status".to_owned(),
+                PropertyValue::EnumValue(status.to_owned()),
+            ),
+            ("score".to_owned(), PropertyValue::Number(score)),
+            (
+                "created_at".to_owned(),
+                PropertyValue::DateTime(format!("2026-09-09T08:00:0{}Z", score as u8)),
+            ),
+        ]),
+    )
+    .with_permission_scope("scope:synthetic")
+    .with_source_version(Version::new(2))
+    .with_integrity(format!("integrity-{record_id}"))
 }
 
 #[test]
@@ -166,11 +290,27 @@ fn invalid_temporal_range_is_rejected() {
 }
 
 #[test]
-fn minimal_query_uses_no_identity_or_persistence_contract() {
+fn minimal_query_executes_with_caller_supplied_result_identity() {
     let definition = query();
+    let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![record(
+        "record-001",
+        "active",
+        5.0,
+    )]);
+    let request = QueryExecutionRequest::new(
+        definition,
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-001"),
+    );
 
-    validate_query_definition(&definition).unwrap();
-    assert_eq!(definition.temporal_scope, TemporalScope::Current);
+    let result = QueryEngine::new()
+        .execute_one_shot(&source, &SyntheticAuthorization::default(), request)
+        .unwrap();
+
+    assert_eq!("result-001", result.id.as_str());
+    assert_eq!(Version::initial(), result.version);
+    assert_eq!(QueryCompleteness::Complete, result.completeness);
+    assert_eq!(1, result.items.len());
 }
 
 #[test]
@@ -293,6 +433,272 @@ fn invalid_schema_field_is_rejected_structurally() {
     assert!(matches!(
         error,
         QueryEngineError::InvalidField { field } if field == "missing"
+    ));
+}
+
+#[test]
+fn execution_projects_authorized_records_with_provenance_and_boundary() {
+    let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![
+        record("record-002", "inactive", 4.0),
+        record("record-001", "active", 5.0),
+    ]);
+    let mut projection = BTreeSet::new();
+    projection.insert("status".to_owned());
+    let definition = query()
+        .with_predicate(Predicate::Equals {
+            field: "status".to_owned(),
+            value: PropertyValue::EnumValue("active".to_owned()),
+        })
+        .with_projection(Projection::SelectedFields(projection));
+    let request = QueryExecutionRequest::new(
+        definition.clone(),
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-001"),
+    );
+
+    let result = QueryEngine::new()
+        .execute_one_shot(&source, &SyntheticAuthorization::default(), request)
+        .unwrap();
+
+    assert_eq!(boundary(), result.consistency_boundary);
+    assert_eq!(PresentationType::RecordSet, result.presentation_type);
+    assert_eq!(1, result.items.len());
+    assert_eq!(
+        Some(&PropertyValue::EnumValue("active".to_owned())),
+        result.items[0].fields.get("status")
+    );
+    assert!(!result.items[0].fields.contains_key("score"));
+    assert_eq!(
+        ResultClassification::SourceFact,
+        result.items[0].classification
+    );
+    assert_eq!(definition, result.items[0].provenance.query_definition);
+    assert_eq!(
+        BTreeSet::from(["record-001".to_owned()]),
+        result.items[0].provenance.source_record_ids
+    );
+    assert_eq!(
+        Some("scope:synthetic".to_owned()),
+        result.items[0].provenance.permission_scope
+    );
+}
+
+#[test]
+fn denied_and_hidden_denied_records_do_not_influence_aggregate_results() {
+    let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![
+        record("record-001", "active", 5.0),
+        record("record-002", "active", 10.0),
+        record("record-003", "active", 20.0),
+    ]);
+    let definition = query().with_aggregations(vec![
+        AggregationSpec::new(AggregationFunction::Count, None, "count"),
+        AggregationSpec::new(AggregationFunction::Sum, Some("score".to_owned()), "sum"),
+    ]);
+    let authorization = SyntheticAuthorization::default()
+        .with_decision("record-002", AuthorizationEffect::Deny)
+        .with_decision("record-003", AuthorizationEffect::HiddenDeny);
+    let request = QueryExecutionRequest::new(
+        definition,
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-aggregate"),
+    );
+
+    let result = QueryEngine::new()
+        .execute_one_shot(&source, &authorization, request)
+        .unwrap();
+
+    assert_eq!(
+        authorization.calls(),
+        ["record-001", "record-002", "record-003"]
+    );
+    assert_eq!(1, result.items.len());
+    assert_eq!(
+        Some(&PropertyValue::Number(1.0)),
+        result.items[0].fields.get("count")
+    );
+    assert_eq!(
+        Some(&PropertyValue::Number(5.0)),
+        result.items[0].fields.get("sum")
+    );
+    assert_eq!(
+        BTreeSet::from(["record-001".to_owned()]),
+        result.items[0].provenance.source_record_ids
+    );
+}
+
+#[test]
+fn sorting_is_deterministic_and_uses_stable_key_as_tie_breaker() {
+    let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![
+        record("record-c", "active", 5.0),
+        record("record-a", "active", 5.0),
+        record("record-b", "active", 7.0),
+    ]);
+    let definition = query().with_sort(vec![SortSpec::new("score", SortDirection::Ascending)]);
+    let request = QueryExecutionRequest::new(
+        definition,
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-sorted"),
+    );
+
+    let result = QueryEngine::new()
+        .execute_one_shot(&source, &SyntheticAuthorization::default(), request)
+        .unwrap();
+    let ordered = result
+        .items
+        .iter()
+        .map(|item| {
+            item.provenance
+                .source_record_ids
+                .iter()
+                .next()
+                .unwrap()
+                .clone()
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(ordered, ["record-a", "record-c", "record-b"]);
+}
+
+#[test]
+fn identical_query_boundary_and_authorization_produce_identical_result_bytes() {
+    let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![record(
+        "record-001",
+        "active",
+        5.0,
+    )]);
+    let definition = query();
+    let first_request = QueryExecutionRequest::new(
+        definition.clone(),
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-001"),
+    );
+    let second_request = QueryExecutionRequest::new(
+        definition,
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-001"),
+    );
+
+    let first = QueryEngine::new()
+        .execute_one_shot(&source, &SyntheticAuthorization::default(), first_request)
+        .unwrap();
+    let second = QueryEngine::new()
+        .execute_one_shot(&source, &SyntheticAuthorization::default(), second_request)
+        .unwrap();
+
+    assert_eq!(first, second);
+    assert_eq!(
+        canonical_query_result_bytes(&first),
+        canonical_query_result_bytes(&second)
+    );
+}
+
+#[test]
+fn statistical_correlation_classification_is_preserved_not_retagged() {
+    let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![record(
+        "record-001",
+        "active",
+        5.0,
+    )
+    .with_classification(ResultClassification::StatisticalCorrelation)]);
+    let request = QueryExecutionRequest::new(
+        query(),
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-correlation"),
+    );
+
+    let result = QueryEngine::new()
+        .execute_one_shot(&source, &SyntheticAuthorization::default(), request)
+        .unwrap();
+
+    assert_eq!(
+        ResultClassification::StatisticalCorrelation,
+        result.items[0].classification
+    );
+}
+
+#[test]
+fn unavailable_boundary_is_rejected_unless_partial_results_are_allowed() {
+    let unavailable_boundary = ConsistencyBoundary::empty().with_event_engine(
+        ConsistencySlot::Unavailable(ConsistencyBoundaryUnavailable::new(
+            ConsistencyBoundaryUnavailableReason::ComponentApiNotAvailable,
+            "event boundary API not implemented",
+        )),
+    );
+    let source = SyntheticSource::new(SourceCapabilities::all())
+        .with_records(vec![record("record-001", "active", 5.0)])
+        .with_boundary(unavailable_boundary.clone());
+    let rejected = QueryExecutionRequest::new(
+        query(),
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-rejected"),
+    );
+
+    assert!(matches!(
+        QueryEngine::new().execute_one_shot(&source, &SyntheticAuthorization::default(), rejected),
+        Err(QueryEngineError::ConsistencyBoundaryUnavailable {
+            reason: ConsistencyBoundaryUnavailableReason::ComponentApiNotAvailable,
+            ..
+        })
+    ));
+
+    let allowed_definition = QueryDefinition::new(
+        source_ref(),
+        TemporalScope::Current,
+        None,
+        PartialResultPolicy::AllowIncomplete,
+        PresentationType::RecordSet,
+    );
+    let allowed = QueryExecutionRequest::new(
+        allowed_definition,
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-allowed"),
+    );
+    let result = QueryEngine::new()
+        .execute_one_shot(&source, &SyntheticAuthorization::default(), allowed)
+        .unwrap();
+
+    assert_eq!(unavailable_boundary, result.consistency_boundary);
+    assert_eq!(
+        QueryCompleteness::Incomplete {
+            reason: "component-api-not-available".to_owned()
+        },
+        result.completeness
+    );
+}
+
+#[test]
+fn cancellation_and_authorization_provider_failure_are_distinct_errors() {
+    let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![record(
+        "record-001",
+        "active",
+        5.0,
+    )]);
+    let request = QueryExecutionRequest::new(
+        query(),
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-cancelled"),
+    );
+    let cancellation = CancellationState::new();
+    cancellation.request_cancel();
+
+    assert!(matches!(
+        QueryEngine::new().execute_one_shot_with_cancellation(
+            &source,
+            &SyntheticAuthorization::default(),
+            request.clone(),
+            &cancellation,
+        ),
+        Err(QueryEngineError::Cancelled)
+    ));
+
+    assert!(matches!(
+        QueryEngine::new().execute_one_shot(
+            &source,
+            &SyntheticAuthorization::failing("policy backend unavailable"),
+            request,
+        ),
+        Err(QueryEngineError::AuthorizationProviderUnavailable { message })
+            if message == "policy backend unavailable"
     ));
 }
 
@@ -498,10 +904,11 @@ fn cancellation_state_is_one_shot_and_clone_visible() {
     ));
 }
 
-fn production_sources() -> [(&'static str, &'static str); 7] {
+fn production_sources() -> [(&'static str, &'static str); 8] {
     [
         ("capabilities.rs", include_str!("capabilities.rs")),
         ("errors.rs", include_str!("errors.rs")),
+        ("execution.rs", include_str!("execution.rs")),
         ("lib.rs", include_str!("lib.rs")),
         ("limits.rs", include_str!("limits.rs")),
         ("ordering.rs", include_str!("ordering.rs")),
@@ -562,24 +969,22 @@ fn production_sources_have_no_engine_adapter_dependencies_or_calls() {
 }
 
 #[test]
-fn public_surface_has_no_executor_registration_storage_or_planner_contract() {
+fn public_surface_exposes_executor_without_storage_registry_or_planner_contract() {
     let lib = include_str!("lib.rs");
     let capabilities = include_str!("capabilities.rs");
-    let source = [lib, capabilities].join("\n");
+
+    assert!(lib.contains("pub mod execution"));
+    assert!(lib.contains("pub use crate::execution::QueryEngine"));
+    assert!(capabilities.contains("pub trait ExecutableQuerySourceProvider"));
 
     for forbidden_public_form in [
-        "pub struct QueryEngine",
-        "pub enum QueryEngine",
-        "pub trait QueryEngine",
-        "pub fn execute",
         "pub fn register",
         "pub fn plan",
         "pub mod planner",
-        "pub mod executor",
         "pub mod storage",
     ] {
         assert!(
-            !source.contains(forbidden_public_form),
+            !lib.contains(forbidden_public_form),
             "forbidden public surface found: {forbidden_public_form}"
         );
     }
@@ -603,9 +1008,6 @@ fn deferred_contracts_are_not_present_as_public_placeholders() {
             "pub struct ContinuationToken",
             "pub enum ContinuationToken",
             "pub type ContinuationToken",
-            "pub struct ConsistencyBoundary",
-            "pub enum ConsistencyBoundary",
-            "pub type ConsistencyBoundary",
         ] {
             assert!(
                 !source.contains(forbidden_public_form),
@@ -616,21 +1018,23 @@ fn deferred_contracts_are_not_present_as_public_placeholders() {
 }
 
 #[test]
-fn error_taxonomy_excludes_deferred_error_variants() {
+fn error_taxonomy_includes_execution_error_variants() {
     let errors = include_str!("errors.rs");
 
-    for forbidden_error in [
+    for required_error in [
         "PermissionDenied",
         "ConsistencyBoundaryUnavailable",
-        "Cursor",
-        "ContinuationToken",
         "SourceUnavailable",
         "IncompleteExecution",
         "ExecutionStrategyUnavailable",
+        "AuthorizationProviderUnavailable",
+        "SavedQuerySchemaVersionMismatch",
+        "InvalidCursor",
+        "ExpiredCursor",
     ] {
         assert!(
-            !errors.contains(forbidden_error),
-            "forbidden deferred error variant found: {forbidden_error}"
+            errors.contains(required_error),
+            "required execution error variant missing: {required_error}"
         );
     }
 }
