@@ -5,9 +5,10 @@ use crate::errors::{
 };
 use crate::limits::validate_execution_limits;
 use crate::types::{
-    AggregationFunction, AggregationSpec, GroupSpec, Predicate, Projection, QueryDefinition,
-    QueryExecutionRequest, QueryRecord, QuerySchema, QuerySourceRef, SavedQueryDefinition,
-    SortSpec, TemporalScope, TraversalSpec, CURRENT_SAVED_QUERY_SCHEMA_VERSION,
+    AggregationFunction, AggregationSpec, ContextPackageRequest, GroupSpec, Predicate, Projection,
+    QueryDefinition, QueryExecutionRequest, QueryRecord, QuerySchema, QuerySourceRef,
+    SavedQueryDefinition, SortSpec, TemporalScope, TraversalSpec,
+    CURRENT_SAVED_QUERY_SCHEMA_VERSION,
 };
 
 /// Validates a query definition against local structural rules only.
@@ -158,6 +159,24 @@ pub fn validate_saved_query_definition(
         }
     }
     validate_query_definition(&saved_query.query_definition)
+}
+
+/// Validates a Context Package request before execution.
+pub fn validate_context_package_request(request: &ContextPackageRequest) -> QueryEngineResult<()> {
+    if request.package_id.is_empty() {
+        return Err(malformed_query(ValidationError::EmptyContextPackageId));
+    }
+    if request.max_items == 0 {
+        return Err(malformed_query(
+            ValidationError::ZeroContextPackageItemLimit,
+        ));
+    }
+    if request.max_depth == 0 {
+        return Err(malformed_query(
+            ValidationError::ZeroContextPackageDepthLimit,
+        ));
+    }
+    validate_query_execution_request(&request.execution_request)
 }
 
 fn validate_temporal_scope(scope: &TemporalScope) -> QueryEngineResult<()> {

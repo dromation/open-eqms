@@ -18,15 +18,15 @@ use crate::saved_query::SavedQueryCatalog;
 use crate::types::{
     saved_query_authorization_target, AggregationFunction, AggregationSpec, AuthorizationEffect,
     AuthorizationProvider, AuthorizationRequest, AuthorizationTarget, CallerPermissionContext,
-    ConsistencyBoundary, ConsistencySlot, PartialResultPolicy, PermissionAction, Predicate,
-    Projection, PropertyValue, QueryCompleteness, QueryDefinition, QueryExecutionRequest,
-    QueryRecord, QueryResult, QueryResultItem, ResultClassification, ResultProvenance,
-    SavedQueryDefinition, SavedQueryExecutionRequest, SortDirection, SortSpec, StableOrderingKey,
-    Version,
+    ConsistencyBoundary, ConsistencySlot, ContextPackage, ContextPackageRequest,
+    PartialResultPolicy, PermissionAction, Predicate, Projection, PropertyValue, QueryCompleteness,
+    QueryDefinition, QueryExecutionRequest, QueryRecord, QueryResult, QueryResultItem,
+    ResultClassification, ResultProvenance, SavedQueryDefinition, SavedQueryExecutionRequest,
+    SortDirection, SortSpec, StableOrderingKey, Version,
 };
 use crate::validation::{
-    validate_query_execution_request, validate_query_record_against_schema,
-    validate_saved_query_definition,
+    validate_context_package_request, validate_query_execution_request,
+    validate_query_record_against_schema, validate_saved_query_definition,
 };
 
 /// SPEC-004 Query Engine facade for finite one-shot execution.
@@ -198,6 +198,40 @@ impl QueryEngine {
                 request.result_id,
             ),
         )
+    }
+
+    /// Builds one bounded Context Package from an ordinary one-shot query result.
+    pub fn build_context_package<P, A>(
+        &self,
+        provider: &P,
+        authorization_provider: &A,
+        request: ContextPackageRequest,
+    ) -> QueryEngineResult<ContextPackage>
+    where
+        P: ExecutableQuerySourceProvider,
+        A: AuthorizationProvider,
+        A::Error: fmt::Display,
+    {
+        validate_context_package_request(&request)?;
+        let caller_context = request.execution_request.caller_context.clone();
+        let package_id = request.package_id;
+        let max_items = request.max_items;
+        let max_depth = request.max_depth;
+        let result =
+            self.execute_one_shot(provider, authorization_provider, request.execution_request)?;
+        if result.items.len() > max_items {
+            return Err(QueryEngineError::ExecutionLimitExceeded {
+                limit: crate::limits::ExecutionLimitKind::ResultCount,
+            });
+        }
+
+        Ok(ContextPackage {
+            id: package_id,
+            version: Version::initial(),
+            caller_context,
+            max_depth,
+            query_result: result,
+        })
     }
 }
 

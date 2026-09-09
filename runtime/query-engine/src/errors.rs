@@ -243,6 +243,12 @@ pub enum ValidationError {
     EmptySavedQueryChangeTimestamp,
     /// SavedQuery version must be greater than zero.
     ZeroSavedQueryVersion,
+    /// Context Package identity token must be non-empty.
+    EmptyContextPackageId,
+    /// Context Package item limit must be greater than zero.
+    ZeroContextPackageItemLimit,
+    /// Context Package depth limit must be greater than zero.
+    ZeroContextPackageDepthLimit,
 }
 
 impl fmt::Display for ValidationError {
@@ -304,6 +310,15 @@ impl fmt::Display for ValidationError {
             }
             Self::ZeroSavedQueryVersion => {
                 formatter.write_str("saved query version must be greater than zero")
+            }
+            Self::EmptyContextPackageId => {
+                formatter.write_str("context package identity must not be empty")
+            }
+            Self::ZeroContextPackageItemLimit => {
+                formatter.write_str("context package item limit must be greater than zero")
+            }
+            Self::ZeroContextPackageDepthLimit => {
+                formatter.write_str("context package depth limit must be greater than zero")
             }
         }
     }

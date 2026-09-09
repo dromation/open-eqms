@@ -929,6 +929,103 @@ fn saved_query_schema_mismatch_and_catalog_failure_are_distinct() {
 }
 
 #[test]
+fn context_package_wraps_authorized_query_result_without_interpretation() {
+    let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![
+        record("record-001", "active", 5.0),
+        record("record-002", "active", 7.0),
+    ]);
+    let authorization = SyntheticAuthorization::default()
+        .with_decision("record-002", AuthorizationEffect::HiddenDeny);
+    let execution_request = QueryExecutionRequest::new(
+        query(),
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-context"),
+    );
+    let package_request = ContextPackageRequest::new(
+        ContextPackageId::new("context-001"),
+        execution_request,
+        4,
+        1,
+    );
+
+    let package = QueryEngine::new()
+        .build_context_package(&source, &authorization, package_request)
+        .unwrap();
+
+    assert_eq!("context-001", package.id.as_str());
+    assert_eq!(Version::initial(), package.version);
+    assert_eq!("caller-context", package.caller_context.as_str());
+    assert_eq!(1, package.max_depth);
+    assert_eq!(boundary(), package.query_result.consistency_boundary);
+    assert_eq!(1, package.query_result.items.len());
+    assert_eq!(
+        BTreeSet::from(["record-001".to_owned()]),
+        package.query_result.items[0].provenance.source_record_ids
+    );
+}
+
+#[test]
+fn context_package_limits_are_validated_and_enforced() {
+    let execution_request = QueryExecutionRequest::new(
+        query(),
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-context"),
+    );
+    let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![
+        record("record-001", "active", 5.0),
+        record("record-002", "active", 7.0),
+    ]);
+
+    assert!(matches!(
+        QueryEngine::new().build_context_package(
+            &source,
+            &SyntheticAuthorization::default(),
+            ContextPackageRequest::new(
+                ContextPackageId::new("context-001"),
+                execution_request.clone(),
+                0,
+                1,
+            ),
+        ),
+        Err(QueryEngineError::MalformedQuery {
+            failure: ValidationError::ZeroContextPackageItemLimit
+        })
+    ));
+
+    assert!(matches!(
+        QueryEngine::new().build_context_package(
+            &source,
+            &SyntheticAuthorization::default(),
+            ContextPackageRequest::new(
+                ContextPackageId::new("context-001"),
+                execution_request.clone(),
+                4,
+                0,
+            ),
+        ),
+        Err(QueryEngineError::MalformedQuery {
+            failure: ValidationError::ZeroContextPackageDepthLimit
+        })
+    ));
+
+    assert!(matches!(
+        QueryEngine::new().build_context_package(
+            &source,
+            &SyntheticAuthorization::default(),
+            ContextPackageRequest::new(
+                ContextPackageId::new("context-001"),
+                execution_request,
+                1,
+                1,
+            ),
+        ),
+        Err(QueryEngineError::ExecutionLimitExceeded {
+            limit: ExecutionLimitKind::ResultCount
+        })
+    ));
+}
+
+#[test]
 fn malformed_predicate_and_aggregation_shapes_are_rejected() {
     let empty_branch = query().with_predicate(Predicate::And(Vec::new()));
     assert!(matches!(
@@ -1223,8 +1320,6 @@ fn deferred_contracts_are_not_present_as_public_placeholders() {
         for forbidden_public_form in [
             "pub trait PermissionProvider",
             "pub struct PermissionProvider",
-            "pub struct ContextPackage",
-            "pub enum ContextPackage",
             "pub mod context_package",
             "pub struct Cursor",
             "pub enum Cursor",

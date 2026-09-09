@@ -617,6 +617,78 @@ pub struct QueryResult {
     pub completeness: QueryCompleteness,
 }
 
+/// Opaque identity for one Context Package.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct ContextPackageId(String);
+
+impl ContextPackageId {
+    /// Creates a Context Package identity from a caller-supplied opaque token.
+    pub fn new(token: impl Into<String>) -> Self {
+        Self(token.into())
+    }
+
+    /// Returns the opaque Context Package identity token.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Reports whether the Context Package identity token is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl std::fmt::Display for ContextPackageId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Request to build one bounded Context Package from an ordinary query execution.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ContextPackageRequest {
+    /// Context Package identity supplied by the caller for deterministic replay.
+    pub package_id: ContextPackageId,
+    /// Query execution used to gather the package's evidence entries.
+    pub execution_request: QueryExecutionRequest,
+    /// Maximum number of evidence entries allowed in the package.
+    pub max_items: usize,
+    /// Maximum relationship depth represented by this package request.
+    pub max_depth: usize,
+}
+
+impl ContextPackageRequest {
+    /// Creates a Context Package request.
+    pub fn new(
+        package_id: ContextPackageId,
+        execution_request: QueryExecutionRequest,
+        max_items: usize,
+        max_depth: usize,
+    ) -> Self {
+        Self {
+            package_id,
+            execution_request,
+            max_items,
+            max_depth,
+        }
+    }
+}
+
+/// Bounded, permission-filtered Context Package for adapter consumption.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ContextPackage {
+    /// Immutable Context Package identity.
+    pub id: ContextPackageId,
+    /// Context Package version.
+    pub version: Version,
+    /// Opaque caller/permission context used to build the package.
+    pub caller_context: CallerPermissionContext,
+    /// Maximum depth requested for related evidence.
+    pub max_depth: usize,
+    /// Ordinary Query Result whose items form this package's evidence set.
+    pub query_result: QueryResult,
+}
+
 impl QuerySchema {
     /// Creates a schema description from field kinds.
     pub fn new(fields: BTreeMap<String, PropertyValueKind>) -> Self {

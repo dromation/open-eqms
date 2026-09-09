@@ -39,13 +39,13 @@ pub use crate::types::{
     saved_query_authorization_target, AggregationFunction, AggregationSpec, AuthorizationProvider,
     AuthorizationRequest, AuthorizationTarget, CallerPermissionContext, ConsistencyBoundary,
     ConsistencyBoundaryUnavailable, ConsistencyBoundaryUnavailableReason, ConsistencySlot,
-    GroupSpec, PartialResultPolicy, PermissionAction, Predicate, PresentationType, Projection,
-    QueryCompleteness, QueryDefinition, QueryExecutionRequest, QueryRecord, QueryResult,
-    QueryResultId, QueryResultItem, QuerySchema, QuerySourceRef, ResultClassification,
-    ResultProvenance, SavedQueryChange, SavedQueryDefinition, SavedQueryExecutionRequest,
-    SavedQueryId, SavedQueryValidationStatus, SortDirection, SortSpec, SourceCapabilities,
-    SourceCapability, StableConsistencyMarker, StableOrderingKey, TemporalScope,
-    TraversalDirection, TraversalSpec, Version, CURRENT_SAVED_QUERY_SCHEMA_VERSION,
+    ContextPackage, ContextPackageId, ContextPackageRequest, GroupSpec, PartialResultPolicy,
+    PermissionAction, Predicate, PresentationType, Projection, QueryCompleteness, QueryDefinition,
+    QueryExecutionRequest, QueryRecord, QueryResult, QueryResultId, QueryResultItem, QuerySchema,
+    QuerySourceRef, ResultClassification, ResultProvenance, SavedQueryChange, SavedQueryDefinition,
+    SavedQueryExecutionRequest, SavedQueryId, SavedQueryValidationStatus, SortDirection, SortSpec,
+    SourceCapabilities, SourceCapability, StableConsistencyMarker, StableOrderingKey,
+    TemporalScope, TraversalDirection, TraversalSpec, Version, CURRENT_SAVED_QUERY_SCHEMA_VERSION,
 };
 
 #[cfg(test)]
