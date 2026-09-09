@@ -6,8 +6,8 @@ use crate::errors::{
 use crate::limits::validate_execution_limits;
 use crate::types::{
     AggregationFunction, AggregationSpec, GroupSpec, Predicate, Projection, QueryDefinition,
-    QueryExecutionRequest, QueryRecord, QuerySchema, QuerySourceRef, SortSpec, TemporalScope,
-    TraversalSpec,
+    QueryExecutionRequest, QueryRecord, QuerySchema, QuerySourceRef, SavedQueryDefinition,
+    SortSpec, TemporalScope, TraversalSpec, CURRENT_SAVED_QUERY_SCHEMA_VERSION,
 };
 
 /// Validates a query definition against local structural rules only.
@@ -109,6 +109,55 @@ pub fn validate_query_record_against_schema(
         }
     }
     Ok(())
+}
+
+/// Validates a SavedQuery metadata record before registration or replay.
+pub fn validate_saved_query_definition(
+    saved_query: &SavedQueryDefinition,
+) -> QueryEngineResult<()> {
+    if saved_query.schema_version != CURRENT_SAVED_QUERY_SCHEMA_VERSION {
+        return Err(
+            crate::errors::QueryEngineError::SavedQuerySchemaVersionMismatch {
+                reason: format!(
+                    "expected schema version {}, got {}",
+                    CURRENT_SAVED_QUERY_SCHEMA_VERSION, saved_query.schema_version
+                ),
+            },
+        );
+    }
+    if saved_query.id.is_empty() {
+        return Err(malformed_query(ValidationError::EmptySavedQueryId));
+    }
+    if saved_query.name.is_empty() {
+        return Err(malformed_query(ValidationError::EmptySavedQueryName));
+    }
+    if saved_query.version.value() == 0 {
+        return Err(malformed_query(ValidationError::ZeroSavedQueryVersion));
+    }
+    if saved_query.owner.is_empty() {
+        return Err(malformed_query(ValidationError::EmptySavedQueryOwner));
+    }
+    if saved_query.access_permission_scope.is_empty() {
+        return Err(malformed_query(
+            ValidationError::EmptySavedQueryAccessPermissionScope,
+        ));
+    }
+    if saved_query.change_history.is_empty() {
+        return Err(malformed_query(
+            ValidationError::EmptySavedQueryChangeHistory,
+        ));
+    }
+    for change in &saved_query.change_history {
+        if change.actor.is_empty() {
+            return Err(malformed_query(ValidationError::EmptySavedQueryChangeActor));
+        }
+        if change.changed_at.is_empty() {
+            return Err(malformed_query(
+                ValidationError::EmptySavedQueryChangeTimestamp,
+            ));
+        }
+    }
+    validate_query_definition(&saved_query.query_definition)
 }
 
 fn validate_temporal_scope(scope: &TemporalScope) -> QueryEngineResult<()> {

@@ -20,6 +20,7 @@ pub mod execution;
 pub mod limits;
 #[cfg(test)]
 mod ordering;
+pub mod saved_query;
 pub mod types;
 pub mod validation;
 
@@ -33,16 +34,18 @@ pub use crate::limits::{
     ensure_timeout_not_elapsed, validate_execution_limits, CancellationState, ExecutionLimitKind,
     ExecutionLimits, QueryTimeout,
 };
+pub use crate::saved_query::SavedQueryCatalog;
 pub use crate::types::{
-    AggregationFunction, AggregationSpec, AuthorizationProvider, AuthorizationRequest,
-    AuthorizationTarget, CallerPermissionContext, ConsistencyBoundary,
+    saved_query_authorization_target, AggregationFunction, AggregationSpec, AuthorizationProvider,
+    AuthorizationRequest, AuthorizationTarget, CallerPermissionContext, ConsistencyBoundary,
     ConsistencyBoundaryUnavailable, ConsistencyBoundaryUnavailableReason, ConsistencySlot,
     GroupSpec, PartialResultPolicy, PermissionAction, Predicate, PresentationType, Projection,
     QueryCompleteness, QueryDefinition, QueryExecutionRequest, QueryRecord, QueryResult,
     QueryResultId, QueryResultItem, QuerySchema, QuerySourceRef, ResultClassification,
-    ResultProvenance, SortDirection, SortSpec, SourceCapabilities, SourceCapability,
-    StableConsistencyMarker, StableOrderingKey, TemporalScope, TraversalDirection, TraversalSpec,
-    Version,
+    ResultProvenance, SavedQueryChange, SavedQueryDefinition, SavedQueryExecutionRequest,
+    SavedQueryId, SavedQueryValidationStatus, SortDirection, SortSpec, SourceCapabilities,
+    SourceCapability, StableConsistencyMarker, StableOrderingKey, TemporalScope,
+    TraversalDirection, TraversalSpec, Version, CURRENT_SAVED_QUERY_SCHEMA_VERSION,
 };
 
 #[cfg(test)]

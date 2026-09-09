@@ -270,6 +270,161 @@ impl std::fmt::Display for QueryResultId {
     }
 }
 
+/// Current schema version for SavedQuery metadata records.
+pub const CURRENT_SAVED_QUERY_SCHEMA_VERSION: u32 = 1;
+
+/// Opaque identity for a saved reusable query definition.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct SavedQueryId(String);
+
+impl SavedQueryId {
+    /// Creates a SavedQuery identity from a caller-supplied opaque token.
+    pub fn new(token: impl Into<String>) -> Self {
+        Self(token.into())
+    }
+
+    /// Returns the opaque SavedQuery identity token.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Reports whether the SavedQuery identity token is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl std::fmt::Display for SavedQueryId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Review status for reusable query definitions.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum SavedQueryValidationStatus {
+    /// Draft query not approved for regulated use.
+    Draft,
+    /// Reviewed query not yet approved for regulated use.
+    Reviewed,
+    /// Query approved for regulated reuse.
+    ApprovedForRegulatedUse,
+    /// Retired query retained for replay and traceability.
+    Retired,
+}
+
+/// Change-history entry for a SavedQuery definition.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct SavedQueryChange {
+    /// Actor token responsible for the change.
+    pub actor: String,
+    /// Caller-supplied timestamp token for the change.
+    pub changed_at: String,
+    /// Opaque change reason or note.
+    pub reason: String,
+}
+
+impl SavedQueryChange {
+    /// Creates a SavedQuery change-history entry.
+    pub fn new(
+        actor: impl Into<String>,
+        changed_at: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self {
+            actor: actor.into(),
+            changed_at: changed_at.into(),
+            reason: reason.into(),
+        }
+    }
+}
+
+/// Versioned reusable query definition.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SavedQueryDefinition {
+    /// SavedQuery metadata schema version.
+    pub schema_version: u32,
+    /// SavedQuery identity.
+    pub id: SavedQueryId,
+    /// Human-readable name.
+    pub name: String,
+    /// Version of this saved query definition.
+    pub version: Version,
+    /// Non-empty owner token.
+    pub owner: String,
+    /// Access-permission scope that governs this saved query.
+    pub access_permission_scope: String,
+    /// Review status for regulated reuse.
+    pub validation_status: SavedQueryValidationStatus,
+    /// Complete change history for this saved query version.
+    pub change_history: Vec<SavedQueryChange>,
+    /// Structural query definition to execute.
+    pub query_definition: QueryDefinition,
+}
+
+impl SavedQueryDefinition {
+    /// Creates a SavedQuery definition using the current metadata schema version.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        id: SavedQueryId,
+        name: impl Into<String>,
+        version: Version,
+        owner: impl Into<String>,
+        access_permission_scope: impl Into<String>,
+        validation_status: SavedQueryValidationStatus,
+        change_history: Vec<SavedQueryChange>,
+        query_definition: QueryDefinition,
+    ) -> Self {
+        Self {
+            schema_version: CURRENT_SAVED_QUERY_SCHEMA_VERSION,
+            id,
+            name: name.into(),
+            version,
+            owner: owner.into(),
+            access_permission_scope: access_permission_scope.into(),
+            validation_status,
+            change_history,
+            query_definition,
+        }
+    }
+
+    /// Builds the neutral authorization target for this saved query.
+    pub fn authorization_target(&self) -> AuthorizationTarget {
+        saved_query_authorization_target(&self.id)
+    }
+}
+
+/// Request to execute one saved query.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SavedQueryExecutionRequest {
+    /// SavedQuery identity to retrieve.
+    pub saved_query_id: SavedQueryId,
+    /// Opaque caller/permission context supplied by Security.
+    pub caller_context: CallerPermissionContext,
+    /// Caller-supplied result identity used for deterministic replay.
+    pub result_id: QueryResultId,
+}
+
+impl SavedQueryExecutionRequest {
+    /// Creates a SavedQuery execution request.
+    pub fn new(
+        saved_query_id: SavedQueryId,
+        caller_context: CallerPermissionContext,
+        result_id: QueryResultId,
+    ) -> Self {
+        Self {
+            saved_query_id,
+            caller_context,
+            result_id,
+        }
+    }
+}
+
+/// Builds the neutral authorization target for a SavedQuery identity.
+pub fn saved_query_authorization_target(saved_query_id: &SavedQueryId) -> AuthorizationTarget {
+    AuthorizationTarget::new("query-engine", "saved-query", saved_query_id.as_str())
+}
+
 /// Request for one finite, one-shot query execution.
 #[derive(Clone, Debug, PartialEq)]
 pub struct QueryExecutionRequest {

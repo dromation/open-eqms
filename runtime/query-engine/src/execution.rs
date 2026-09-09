@@ -7,21 +7,27 @@ use std::fmt;
 use crate::capabilities::{validate_query_source_contract, ExecutableQuerySourceProvider};
 use crate::errors::{
     authorization_provider_unavailable, consistency_boundary_unavailable, invalid_source_record,
-    QueryEngineResult,
+    saved_query_catalog_unavailable, saved_query_not_found, QueryEngineError, QueryEngineResult,
 };
 use crate::limits::{
     ensure_evaluation_steps_within_limit, ensure_result_count_within_limit, CancellationState,
 };
 #[cfg(test)]
 use crate::ordering::canonical_query_bytes;
+use crate::saved_query::SavedQueryCatalog;
 use crate::types::{
-    AggregationFunction, AggregationSpec, AuthorizationProvider, AuthorizationRequest,
-    CallerPermissionContext, ConsistencyBoundary, ConsistencySlot, PartialResultPolicy,
-    PermissionAction, Predicate, Projection, PropertyValue, QueryCompleteness, QueryDefinition,
-    QueryExecutionRequest, QueryRecord, QueryResult, QueryResultItem, ResultClassification,
-    ResultProvenance, SortDirection, SortSpec, StableOrderingKey, Version,
+    saved_query_authorization_target, AggregationFunction, AggregationSpec, AuthorizationEffect,
+    AuthorizationProvider, AuthorizationRequest, AuthorizationTarget, CallerPermissionContext,
+    ConsistencyBoundary, ConsistencySlot, PartialResultPolicy, PermissionAction, Predicate,
+    Projection, PropertyValue, QueryCompleteness, QueryDefinition, QueryExecutionRequest,
+    QueryRecord, QueryResult, QueryResultItem, ResultClassification, ResultProvenance,
+    SavedQueryDefinition, SavedQueryExecutionRequest, SortDirection, SortSpec, StableOrderingKey,
+    Version,
 };
-use crate::validation::{validate_query_execution_request, validate_query_record_against_schema};
+use crate::validation::{
+    validate_query_execution_request, validate_query_record_against_schema,
+    validate_saved_query_definition,
+};
 
 /// SPEC-004 Query Engine facade for finite one-shot execution.
 #[derive(Clone, Debug, Default)]
@@ -115,6 +121,84 @@ impl QueryEngine {
             completeness,
         })
     }
+
+    /// Registers one validated SavedQuery through an injected catalog.
+    pub fn register_saved_query<C, A>(
+        &self,
+        catalog: &mut C,
+        authorization_provider: &A,
+        caller_context: CallerPermissionContext,
+        saved_query: SavedQueryDefinition,
+    ) -> QueryEngineResult<()>
+    where
+        C: SavedQueryCatalog,
+        C::Error: fmt::Display,
+        A: AuthorizationProvider,
+        A::Error: fmt::Display,
+    {
+        validate_saved_query_definition(&saved_query)?;
+        let target = saved_query.authorization_target();
+        let effect = decide_authorization(
+            authorization_provider,
+            caller_context,
+            PermissionAction::new("query.register-saved-query"),
+            target.clone(),
+        )?;
+        if !matches!(effect, AuthorizationEffect::Allow) {
+            return Err(QueryEngineError::PermissionDenied { target });
+        }
+
+        catalog
+            .save_query(saved_query)
+            .map_err(|error| saved_query_catalog_unavailable(error.to_string()))
+    }
+
+    /// Executes one SavedQuery by retrieving its definition and running it once.
+    pub fn execute_saved_query<C, P, A>(
+        &self,
+        catalog: &C,
+        provider: &P,
+        authorization_provider: &A,
+        request: SavedQueryExecutionRequest,
+    ) -> QueryEngineResult<QueryResult>
+    where
+        C: SavedQueryCatalog,
+        C::Error: fmt::Display,
+        P: ExecutableQuerySourceProvider,
+        A: AuthorizationProvider,
+        A::Error: fmt::Display,
+    {
+        let target = saved_query_authorization_target(&request.saved_query_id);
+        let effect = decide_authorization(
+            authorization_provider,
+            request.caller_context.clone(),
+            PermissionAction::new("query.execute-saved-query"),
+            target.clone(),
+        )?;
+        match effect {
+            AuthorizationEffect::Allow => {}
+            AuthorizationEffect::Deny => return Err(QueryEngineError::PermissionDenied { target }),
+            AuthorizationEffect::HiddenDeny => {
+                return Err(saved_query_not_found(request.saved_query_id));
+            }
+        }
+
+        let saved_query = catalog
+            .load_query(&request.saved_query_id)
+            .map_err(|error| saved_query_catalog_unavailable(error.to_string()))?
+            .ok_or_else(|| saved_query_not_found(request.saved_query_id.clone()))?;
+        validate_saved_query_definition(&saved_query)?;
+
+        self.execute_one_shot(
+            provider,
+            authorization_provider,
+            QueryExecutionRequest::new(
+                saved_query.query_definition,
+                request.caller_context,
+                request.result_id,
+            ),
+        )
+    }
 }
 
 fn boundary_completeness(
@@ -156,19 +240,32 @@ where
     A: AuthorizationProvider,
     A::Error: fmt::Display,
 {
-    let request = AuthorizationRequest::new(
-        caller_context.clone(),
-        PermissionAction::new("query.read-record"),
-        record.authorization_target(),
-    );
+    Ok(matches!(
+        decide_authorization(
+            authorization_provider,
+            caller_context.clone(),
+            PermissionAction::new("query.read-record"),
+            record.authorization_target(),
+        )?,
+        AuthorizationEffect::Allow
+    ))
+}
+
+fn decide_authorization<A>(
+    authorization_provider: &A,
+    caller_context: CallerPermissionContext,
+    action: PermissionAction,
+    target: AuthorizationTarget,
+) -> QueryEngineResult<AuthorizationEffect>
+where
+    A: AuthorizationProvider,
+    A::Error: fmt::Display,
+{
+    let request = AuthorizationRequest::new(caller_context, action, target);
     let decision = authorization_provider
         .decide(&request)
         .map_err(|error| authorization_provider_unavailable(error.to_string()))?;
-
-    Ok(matches!(
-        decision.effect(),
-        crate::types::AuthorizationEffect::Allow
-    ))
+    Ok(decision.effect())
 }
 
 fn predicate_matches(

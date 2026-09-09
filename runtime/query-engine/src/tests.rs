@@ -105,6 +105,44 @@ struct SyntheticAuthorization {
     failure: Option<String>,
 }
 
+#[derive(Default)]
+struct SyntheticSavedQueryCatalog {
+    saved_queries: BTreeMap<SavedQueryId, SavedQueryDefinition>,
+    failure: Option<String>,
+}
+
+impl SyntheticSavedQueryCatalog {
+    fn failing(message: impl Into<String>) -> Self {
+        Self {
+            failure: Some(message.into()),
+            ..Self::default()
+        }
+    }
+}
+
+impl SavedQueryCatalog for SyntheticSavedQueryCatalog {
+    type Error = String;
+
+    fn save_query(&mut self, saved_query: SavedQueryDefinition) -> Result<(), Self::Error> {
+        if let Some(message) = &self.failure {
+            return Err(message.clone());
+        }
+        self.saved_queries
+            .insert(saved_query.id.clone(), saved_query);
+        Ok(())
+    }
+
+    fn load_query(
+        &self,
+        saved_query_id: &SavedQueryId,
+    ) -> Result<Option<SavedQueryDefinition>, Self::Error> {
+        if let Some(message) = &self.failure {
+            return Err(message.clone());
+        }
+        Ok(self.saved_queries.get(saved_query_id).cloned())
+    }
+}
+
 impl SyntheticAuthorization {
     fn with_decision(mut self, record_id: impl Into<String>, effect: AuthorizationEffect) -> Self {
         self.decisions_by_record.insert(record_id.into(), effect);
@@ -183,6 +221,26 @@ fn record(record_id: &str, status: &str, score: f64) -> QueryRecord {
     .with_permission_scope("scope:synthetic")
     .with_source_version(Version::new(2))
     .with_integrity(format!("integrity-{record_id}"))
+}
+
+fn saved_query_definition() -> SavedQueryDefinition {
+    SavedQueryDefinition::new(
+        SavedQueryId::new("saved-001"),
+        "Active records",
+        Version::initial(),
+        "quality-owner",
+        "scope:quality",
+        SavedQueryValidationStatus::ApprovedForRegulatedUse,
+        vec![SavedQueryChange::new(
+            "quality-owner",
+            "2026-09-09T08:00:00Z",
+            "initial approved query",
+        )],
+        query().with_predicate(Predicate::Equals {
+            field: "status".to_owned(),
+            value: PropertyValue::EnumValue("active".to_owned()),
+        }),
+    )
 }
 
 #[test]
@@ -703,6 +761,174 @@ fn cancellation_and_authorization_provider_failure_are_distinct_errors() {
 }
 
 #[test]
+fn saved_query_registration_rejects_missing_mandatory_metadata() {
+    let mut missing_owner = saved_query_definition();
+    missing_owner.owner.clear();
+    assert!(matches!(
+        QueryEngine::new().register_saved_query(
+            &mut SyntheticSavedQueryCatalog::default(),
+            &SyntheticAuthorization::default(),
+            CallerPermissionContext::new("caller-context"),
+            missing_owner,
+        ),
+        Err(QueryEngineError::MalformedQuery {
+            failure: ValidationError::EmptySavedQueryOwner
+        })
+    ));
+
+    let mut missing_scope = saved_query_definition();
+    missing_scope.access_permission_scope.clear();
+    assert!(matches!(
+        QueryEngine::new().register_saved_query(
+            &mut SyntheticSavedQueryCatalog::default(),
+            &SyntheticAuthorization::default(),
+            CallerPermissionContext::new("caller-context"),
+            missing_scope,
+        ),
+        Err(QueryEngineError::MalformedQuery {
+            failure: ValidationError::EmptySavedQueryAccessPermissionScope
+        })
+    ));
+
+    let mut missing_history = saved_query_definition();
+    missing_history.change_history.clear();
+    assert!(matches!(
+        QueryEngine::new().register_saved_query(
+            &mut SyntheticSavedQueryCatalog::default(),
+            &SyntheticAuthorization::default(),
+            CallerPermissionContext::new("caller-context"),
+            missing_history,
+        ),
+        Err(QueryEngineError::MalformedQuery {
+            failure: ValidationError::EmptySavedQueryChangeHistory
+        })
+    ));
+}
+
+#[test]
+fn saved_query_registration_is_authorized_and_uses_injected_catalog() {
+    let saved_query = saved_query_definition();
+    let mut catalog = SyntheticSavedQueryCatalog::default();
+    let authorization = SyntheticAuthorization::default();
+
+    QueryEngine::new()
+        .register_saved_query(
+            &mut catalog,
+            &authorization,
+            CallerPermissionContext::new("caller-context"),
+            saved_query.clone(),
+        )
+        .unwrap();
+
+    assert_eq!(authorization.calls(), ["saved-001"]);
+    assert_eq!(
+        Some(saved_query),
+        catalog.load_query(&SavedQueryId::new("saved-001")).unwrap()
+    );
+}
+
+#[test]
+fn saved_query_registration_denial_does_not_write_catalog() {
+    let mut catalog = SyntheticSavedQueryCatalog::default();
+    let authorization =
+        SyntheticAuthorization::default().with_decision("saved-001", AuthorizationEffect::Deny);
+
+    assert!(matches!(
+        QueryEngine::new().register_saved_query(
+            &mut catalog,
+            &authorization,
+            CallerPermissionContext::new("caller-context"),
+            saved_query_definition(),
+        ),
+        Err(QueryEngineError::PermissionDenied { target })
+            if target.object_identifier() == "saved-001"
+    ));
+    assert!(catalog
+        .load_query(&SavedQueryId::new("saved-001"))
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn saved_query_execution_replays_stored_definition_through_one_shot_executor() {
+    let saved_query = saved_query_definition();
+    let mut catalog = SyntheticSavedQueryCatalog::default();
+    catalog.save_query(saved_query).unwrap();
+    let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![
+        record("record-001", "active", 5.0),
+        record("record-002", "inactive", 7.0),
+    ]);
+    let request = SavedQueryExecutionRequest::new(
+        SavedQueryId::new("saved-001"),
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-saved"),
+    );
+
+    let result = QueryEngine::new()
+        .execute_saved_query(
+            &catalog,
+            &source,
+            &SyntheticAuthorization::default(),
+            request,
+        )
+        .unwrap();
+
+    assert_eq!("result-saved", result.id.as_str());
+    assert_eq!(1, result.items.len());
+    assert_eq!(
+        BTreeSet::from(["record-001".to_owned()]),
+        result.items[0].provenance.source_record_ids
+    );
+}
+
+#[test]
+fn saved_query_hidden_denial_is_observable_as_not_found() {
+    let mut catalog = SyntheticSavedQueryCatalog::default();
+    catalog.save_query(saved_query_definition()).unwrap();
+    let source = SyntheticSource::new(SourceCapabilities::all());
+    let authorization = SyntheticAuthorization::default()
+        .with_decision("saved-001", AuthorizationEffect::HiddenDeny);
+    let request = SavedQueryExecutionRequest::new(
+        SavedQueryId::new("saved-001"),
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-hidden"),
+    );
+
+    assert!(matches!(
+        QueryEngine::new().execute_saved_query(&catalog, &source, &authorization, request),
+        Err(QueryEngineError::SavedQueryNotFound { saved_query_id })
+            if saved_query_id.as_str() == "saved-001"
+    ));
+}
+
+#[test]
+fn saved_query_schema_mismatch_and_catalog_failure_are_distinct() {
+    let mut mismatched = saved_query_definition();
+    mismatched.schema_version = CURRENT_SAVED_QUERY_SCHEMA_VERSION + 1;
+    assert!(matches!(
+        QueryEngine::new().register_saved_query(
+            &mut SyntheticSavedQueryCatalog::default(),
+            &SyntheticAuthorization::default(),
+            CallerPermissionContext::new("caller-context"),
+            mismatched,
+        ),
+        Err(QueryEngineError::SavedQuerySchemaVersionMismatch { reason })
+            if reason.contains("expected schema version")
+    ));
+
+    assert!(matches!(
+        QueryEngine::new().register_saved_query(
+            &mut SyntheticSavedQueryCatalog::failing("catalog offline"),
+            &SyntheticAuthorization::default(),
+            CallerPermissionContext::new("caller-context"),
+            saved_query_definition(),
+        ),
+        Err(QueryEngineError::SavedQueryCatalogUnavailable { message })
+            if message == "catalog offline"
+    ));
+}
+
+#[test]
 fn malformed_predicate_and_aggregation_shapes_are_rejected() {
     let empty_branch = query().with_predicate(Predicate::And(Vec::new()));
     assert!(matches!(
@@ -904,7 +1130,7 @@ fn cancellation_state_is_one_shot_and_clone_visible() {
     ));
 }
 
-fn production_sources() -> [(&'static str, &'static str); 8] {
+fn production_sources() -> [(&'static str, &'static str); 9] {
     [
         ("capabilities.rs", include_str!("capabilities.rs")),
         ("errors.rs", include_str!("errors.rs")),
@@ -912,6 +1138,7 @@ fn production_sources() -> [(&'static str, &'static str); 8] {
         ("lib.rs", include_str!("lib.rs")),
         ("limits.rs", include_str!("limits.rs")),
         ("ordering.rs", include_str!("ordering.rs")),
+        ("saved_query.rs", include_str!("saved_query.rs")),
         ("types.rs", include_str!("types.rs")),
         ("validation.rs", include_str!("validation.rs")),
     ]
@@ -999,9 +1226,6 @@ fn deferred_contracts_are_not_present_as_public_placeholders() {
             "pub struct ContextPackage",
             "pub enum ContextPackage",
             "pub mod context_package",
-            "pub struct SavedQuery",
-            "pub enum SavedQuery",
-            "pub type SavedQuery",
             "pub struct Cursor",
             "pub enum Cursor",
             "pub type Cursor",

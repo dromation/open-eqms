@@ -4,7 +4,8 @@ use std::fmt;
 
 use crate::limits::{ExecutionLimitKind, QueryTimeout};
 use crate::types::{
-    AuthorizationTarget, ConsistencyBoundaryUnavailableReason, QuerySourceRef, SourceCapability,
+    AuthorizationTarget, ConsistencyBoundaryUnavailableReason, QuerySourceRef, SavedQueryId,
+    SourceCapability,
 };
 
 /// Result type returned by Query Engine contract and validation APIs.
@@ -90,6 +91,16 @@ pub enum QueryEngineError {
         /// Machine-readable mismatch reason.
         reason: String,
     },
+    /// SavedQuery identity could not be found or must be hidden from the caller.
+    SavedQueryNotFound {
+        /// SavedQuery identity requested by the caller.
+        saved_query_id: SavedQueryId,
+    },
+    /// SavedQuery catalog could not persist or retrieve metadata.
+    SavedQueryCatalogUnavailable {
+        /// Catalog-supplied failure message.
+        message: String,
+    },
     /// Continuation token is malformed.
     InvalidCursor {
         /// Machine-readable cursor failure reason.
@@ -162,6 +173,12 @@ impl fmt::Display for QueryEngineError {
             Self::SavedQuerySchemaVersionMismatch { reason } => {
                 write!(formatter, "saved query schema-version mismatch: {reason}")
             }
+            Self::SavedQueryNotFound { saved_query_id } => {
+                write!(formatter, "saved query not found: {saved_query_id}")
+            }
+            Self::SavedQueryCatalogUnavailable { message } => {
+                write!(formatter, "saved query catalog unavailable: {message}")
+            }
             Self::InvalidCursor { reason } => write!(formatter, "invalid cursor: {reason}"),
             Self::ExpiredCursor { reason } => write!(formatter, "expired cursor: {reason}"),
             Self::ExecutionStrategyUnavailable { reason } => {
@@ -210,6 +227,22 @@ pub enum ValidationError {
     ZeroTimeout,
     /// Query result identity token must be non-empty.
     EmptyQueryResultId,
+    /// SavedQuery identity token must be non-empty.
+    EmptySavedQueryId,
+    /// SavedQuery name must be non-empty.
+    EmptySavedQueryName,
+    /// SavedQuery owner token must be non-empty.
+    EmptySavedQueryOwner,
+    /// SavedQuery access-permission scope must be non-empty.
+    EmptySavedQueryAccessPermissionScope,
+    /// SavedQuery change history must contain at least one entry.
+    EmptySavedQueryChangeHistory,
+    /// SavedQuery change-history actor token must be non-empty.
+    EmptySavedQueryChangeActor,
+    /// SavedQuery change-history timestamp token must be non-empty.
+    EmptySavedQueryChangeTimestamp,
+    /// SavedQuery version must be greater than zero.
+    ZeroSavedQueryVersion,
 }
 
 impl fmt::Display for ValidationError {
@@ -249,6 +282,28 @@ impl fmt::Display for ValidationError {
             Self::ZeroTimeout => formatter.write_str("timeout must be greater than zero"),
             Self::EmptyQueryResultId => {
                 formatter.write_str("query result identity must not be empty")
+            }
+            Self::EmptySavedQueryId => {
+                formatter.write_str("saved query identity must not be empty")
+            }
+            Self::EmptySavedQueryName => formatter.write_str("saved query name must not be empty"),
+            Self::EmptySavedQueryOwner => {
+                formatter.write_str("saved query owner must not be empty")
+            }
+            Self::EmptySavedQueryAccessPermissionScope => {
+                formatter.write_str("saved query access-permission scope must not be empty")
+            }
+            Self::EmptySavedQueryChangeHistory => {
+                formatter.write_str("saved query change history must not be empty")
+            }
+            Self::EmptySavedQueryChangeActor => {
+                formatter.write_str("saved query change actor must not be empty")
+            }
+            Self::EmptySavedQueryChangeTimestamp => {
+                formatter.write_str("saved query change timestamp must not be empty")
+            }
+            Self::ZeroSavedQueryVersion => {
+                formatter.write_str("saved query version must be greater than zero")
             }
         }
     }
@@ -320,4 +375,16 @@ pub(crate) fn invalid_source_record(
         record_id: record_id.into(),
         reason: reason.into(),
     }
+}
+
+/// Wraps a saved-query catalog failure in the top-level error taxonomy.
+pub(crate) fn saved_query_catalog_unavailable(message: impl Into<String>) -> QueryEngineError {
+    QueryEngineError::SavedQueryCatalogUnavailable {
+        message: message.into(),
+    }
+}
+
+/// Wraps a missing or hidden SavedQuery identity in the top-level error taxonomy.
+pub(crate) fn saved_query_not_found(saved_query_id: SavedQueryId) -> QueryEngineError {
+    QueryEngineError::SavedQueryNotFound { saved_query_id }
 }
