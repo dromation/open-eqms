@@ -618,6 +618,131 @@ fn sorting_is_deterministic_and_uses_stable_key_as_tie_breaker() {
 }
 
 #[test]
+fn pagination_returns_deterministic_next_cursor_and_continuation_page() {
+    let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![
+        record("record-001", "active", 1.0),
+        record("record-002", "active", 2.0),
+        record("record-003", "active", 3.0),
+    ]);
+    let first_request = QueryExecutionRequest::new(
+        query(),
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-page-1"),
+    )
+    .with_pagination(Pagination::first_page(2));
+
+    let first = QueryEngine::new()
+        .execute_one_shot(&source, &SyntheticAuthorization::default(), first_request)
+        .unwrap();
+    let cursor = first.next_cursor.clone().unwrap();
+    let first_ids = first
+        .items
+        .iter()
+        .flat_map(|item| item.provenance.source_record_ids.iter().cloned())
+        .collect::<Vec<_>>();
+
+    let second_request = QueryExecutionRequest::new(
+        query(),
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-page-2"),
+    )
+    .with_pagination(Pagination::after(cursor, 2));
+    let second = QueryEngine::new()
+        .execute_one_shot(&source, &SyntheticAuthorization::default(), second_request)
+        .unwrap();
+    let second_ids = second
+        .items
+        .iter()
+        .flat_map(|item| item.provenance.source_record_ids.iter().cloned())
+        .collect::<Vec<_>>();
+
+    assert_eq!(first_ids, ["record-001", "record-002"]);
+    assert_eq!(second_ids, ["record-003"]);
+    assert!(second.next_cursor.is_none());
+}
+
+#[test]
+fn pagination_rejects_empty_malformed_and_expired_cursors() {
+    let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![record(
+        "record-001",
+        "active",
+        1.0,
+    )]);
+    let empty_cursor_request = QueryExecutionRequest::new(
+        query(),
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-empty-cursor"),
+    )
+    .with_pagination(Pagination {
+        after: Some(ContinuationToken::new("")),
+        max_items: Some(1),
+    });
+    assert!(matches!(
+        QueryEngine::new().execute_one_shot(
+            &source,
+            &SyntheticAuthorization::default(),
+            empty_cursor_request,
+        ),
+        Err(QueryEngineError::MalformedQuery {
+            failure: ValidationError::EmptyContinuationToken
+        })
+    ));
+
+    let malformed_cursor_request = QueryExecutionRequest::new(
+        query(),
+        CallerPermissionContext::new("caller-context"),
+        QueryResultId::new("result-malformed-cursor"),
+    )
+    .with_pagination(Pagination {
+        after: Some(ContinuationToken::new("not-a-query-cursor")),
+        max_items: Some(1),
+    });
+    assert!(matches!(
+        QueryEngine::new().execute_one_shot(
+            &source,
+            &SyntheticAuthorization::default(),
+            malformed_cursor_request,
+        ),
+        Err(QueryEngineError::InvalidCursor { .. })
+    ));
+
+    let first_page_source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![
+        record("record-001", "active", 1.0),
+        record("record-002", "active", 2.0),
+    ]);
+    let first_page = QueryEngine::new()
+        .execute_one_shot(
+            &first_page_source,
+            &SyntheticAuthorization::default(),
+            QueryExecutionRequest::new(
+                query(),
+                CallerPermissionContext::new("caller-context"),
+                QueryResultId::new("result-page-1"),
+            )
+            .with_pagination(Pagination::first_page(1)),
+        )
+        .unwrap();
+    let expired_boundary =
+        ConsistencyBoundary::empty().with_query_definition(ConsistencySlot::Available(
+            StableConsistencyMarker::new("query-definition", "semantic-v2"),
+        ));
+    let second_page_source = first_page_source.with_boundary(expired_boundary);
+    assert!(matches!(
+        QueryEngine::new().execute_one_shot(
+            &second_page_source,
+            &SyntheticAuthorization::default(),
+            QueryExecutionRequest::new(
+                query(),
+                CallerPermissionContext::new("caller-context"),
+                QueryResultId::new("result-page-2"),
+            )
+            .with_pagination(Pagination::after(first_page.next_cursor.unwrap(), 1)),
+        ),
+        Err(QueryEngineError::ExpiredCursor { .. })
+    ));
+}
+
+#[test]
 fn identical_query_boundary_and_authorization_produce_identical_result_bytes() {
     let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![record(
         "record-001",
@@ -1324,7 +1449,6 @@ fn deferred_contracts_are_not_present_as_public_placeholders() {
             "pub struct Cursor",
             "pub enum Cursor",
             "pub type Cursor",
-            "pub struct ContinuationToken",
             "pub enum ContinuationToken",
             "pub type ContinuationToken",
         ] {

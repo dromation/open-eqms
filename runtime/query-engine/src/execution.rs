@@ -18,11 +18,11 @@ use crate::saved_query::SavedQueryCatalog;
 use crate::types::{
     saved_query_authorization_target, AggregationFunction, AggregationSpec, AuthorizationEffect,
     AuthorizationProvider, AuthorizationRequest, AuthorizationTarget, CallerPermissionContext,
-    ConsistencyBoundary, ConsistencySlot, ContextPackage, ContextPackageRequest,
-    PartialResultPolicy, PermissionAction, Predicate, Projection, PropertyValue, QueryCompleteness,
-    QueryDefinition, QueryExecutionRequest, QueryRecord, QueryResult, QueryResultItem,
-    ResultClassification, ResultProvenance, SavedQueryDefinition, SavedQueryExecutionRequest,
-    SortDirection, SortSpec, StableOrderingKey, Version,
+    ConsistencyBoundary, ConsistencySlot, ContextPackage, ContextPackageRequest, ContinuationToken,
+    Pagination, PartialResultPolicy, PermissionAction, Predicate, Projection, PropertyValue,
+    QueryCompleteness, QueryDefinition, QueryExecutionRequest, QueryRecord, QueryResult,
+    QueryResultItem, ResultClassification, ResultProvenance, SavedQueryDefinition,
+    SavedQueryExecutionRequest, SortDirection, SortSpec, StableOrderingKey, Version,
 };
 use crate::validation::{
     validate_context_package_request, validate_query_execution_request,
@@ -109,6 +109,8 @@ impl QueryEngine {
         } else {
             aggregate_records(&request.query, &authorized_records)?
         };
+        let (items, next_cursor) =
+            paginate_items(items, &request.pagination, &consistency_boundary)?;
         ensure_result_count_within_limit(&request.query.execution_limits, items.len())?;
 
         Ok(QueryResult {
@@ -119,6 +121,7 @@ impl QueryEngine {
             presentation_type: request.query.presentation_type,
             items,
             completeness,
+            next_cursor,
         })
     }
 
@@ -233,6 +236,82 @@ impl QueryEngine {
             query_result: result,
         })
     }
+}
+
+fn paginate_items(
+    items: Vec<QueryResultItem>,
+    pagination: &Pagination,
+    consistency_boundary: &ConsistencyBoundary,
+) -> QueryEngineResult<(Vec<QueryResultItem>, Option<ContinuationToken>)> {
+    let start = if let Some(cursor) = &pagination.after {
+        parse_cursor(cursor, consistency_boundary)?
+    } else {
+        0
+    };
+    if start > items.len() {
+        return Err(QueryEngineError::InvalidCursor {
+            reason: "cursor offset is beyond the result set".to_owned(),
+        });
+    }
+
+    let Some(max_items) = pagination.max_items else {
+        return Ok((items.into_iter().skip(start).collect(), None));
+    };
+    let end = start.saturating_add(max_items).min(items.len());
+    let has_next_page = end < items.len();
+    let page = items
+        .into_iter()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .collect::<Vec<_>>();
+    let next_cursor = if has_next_page {
+        Some(make_cursor(end, consistency_boundary))
+    } else {
+        None
+    };
+    Ok((page, next_cursor))
+}
+
+fn make_cursor(offset: usize, consistency_boundary: &ConsistencyBoundary) -> ContinuationToken {
+    let boundary = consistency_boundary.canonical_string();
+    ContinuationToken::new(format!(
+        "open-eqms.query-cursor.v1|{offset}|{}|{boundary}",
+        boundary.len()
+    ))
+}
+
+fn parse_cursor(
+    cursor: &ContinuationToken,
+    consistency_boundary: &ConsistencyBoundary,
+) -> QueryEngineResult<usize> {
+    let parts = cursor.as_str().splitn(4, '|').collect::<Vec<_>>();
+    if parts.len() != 4 || parts[0] != "open-eqms.query-cursor.v1" {
+        return Err(QueryEngineError::InvalidCursor {
+            reason: "cursor does not match the Query Engine cursor format".to_owned(),
+        });
+    }
+    let offset = parts[1]
+        .parse::<usize>()
+        .map_err(|_| QueryEngineError::InvalidCursor {
+            reason: "cursor offset is not a valid number".to_owned(),
+        })?;
+    let boundary_len = parts[2]
+        .parse::<usize>()
+        .map_err(|_| QueryEngineError::InvalidCursor {
+            reason: "cursor boundary length is not a valid number".to_owned(),
+        })?;
+    let boundary = parts[3];
+    if boundary.len() != boundary_len {
+        return Err(QueryEngineError::InvalidCursor {
+            reason: "cursor boundary length does not match token content".to_owned(),
+        });
+    }
+    if boundary != consistency_boundary.canonical_string() {
+        return Err(QueryEngineError::ExpiredCursor {
+            reason: "cursor was produced for a different consistency boundary".to_owned(),
+        });
+    }
+    Ok(offset)
 }
 
 fn boundary_completeness(
@@ -683,6 +762,10 @@ pub(crate) fn canonical_query_result_bytes(result: &QueryResult) -> Vec<u8> {
             encoder.token(reason);
         }
     }
+    encode_optional_string(
+        &mut encoder,
+        result.next_cursor.as_ref().map(|cursor| cursor.as_str()),
+    );
     encoder.token(&result.items.len().to_string());
     for item in &result.items {
         encode_ordering_key(&mut encoder, &item.ordering_key);

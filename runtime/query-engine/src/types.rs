@@ -270,6 +270,68 @@ impl std::fmt::Display for QueryResultId {
     }
 }
 
+/// Opaque deterministic continuation token for paged one-shot query results.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct ContinuationToken(String);
+
+impl ContinuationToken {
+    /// Creates a continuation token from a caller-supplied opaque string.
+    pub fn new(token: impl Into<String>) -> Self {
+        Self(token.into())
+    }
+
+    /// Returns the opaque continuation token.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Reports whether the token is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl std::fmt::Display for ContinuationToken {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Pagination request for a finite one-shot query execution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Pagination {
+    /// Optional continuation token from a prior result page.
+    pub after: Option<ContinuationToken>,
+    /// Optional maximum number of result items to return in this page.
+    pub max_items: Option<usize>,
+}
+
+impl Pagination {
+    /// Creates an unpaginated request.
+    pub const fn unpaginated() -> Self {
+        Self {
+            after: None,
+            max_items: None,
+        }
+    }
+
+    /// Creates a first-page request with a bounded page size.
+    pub fn first_page(max_items: usize) -> Self {
+        Self {
+            after: None,
+            max_items: Some(max_items),
+        }
+    }
+
+    /// Creates a continuation request with a bounded page size.
+    pub fn after(after: ContinuationToken, max_items: usize) -> Self {
+        Self {
+            after: Some(after),
+            max_items: Some(max_items),
+        }
+    }
+}
+
 /// Current schema version for SavedQuery metadata records.
 pub const CURRENT_SAVED_QUERY_SCHEMA_VERSION: u32 = 1;
 
@@ -434,6 +496,8 @@ pub struct QueryExecutionRequest {
     pub caller_context: CallerPermissionContext,
     /// Caller-supplied result identity used for deterministic replay.
     pub result_id: QueryResultId,
+    /// Pagination controls for this one-shot execution.
+    pub pagination: Pagination,
 }
 
 impl QueryExecutionRequest {
@@ -447,7 +511,14 @@ impl QueryExecutionRequest {
             query,
             caller_context,
             result_id,
+            pagination: Pagination::unpaginated(),
         }
+    }
+
+    /// Returns a copy with pagination controls replaced.
+    pub fn with_pagination(mut self, pagination: Pagination) -> Self {
+        self.pagination = pagination;
+        self
     }
 }
 
@@ -615,6 +686,8 @@ pub struct QueryResult {
     pub items: Vec<QueryResultItem>,
     /// Completeness state of this execution.
     pub completeness: QueryCompleteness,
+    /// Continuation token for the next page, when more items remain in this boundary.
+    pub next_cursor: Option<ContinuationToken>,
 }
 
 /// Opaque identity for one Context Package.

@@ -56,6 +56,17 @@ pub fn validate_query_execution_request(request: &QueryExecutionRequest) -> Quer
     if request.result_id.is_empty() {
         return Err(malformed_query(ValidationError::EmptyQueryResultId));
     }
+    if request
+        .pagination
+        .after
+        .as_ref()
+        .is_some_and(|token| token.is_empty())
+    {
+        return Err(malformed_query(ValidationError::EmptyContinuationToken));
+    }
+    if matches!(request.pagination.max_items, Some(0)) {
+        return Err(malformed_query(ValidationError::ZeroPageSize));
+    }
     Ok(())
 }
 

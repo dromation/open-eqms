@@ -227,6 +227,10 @@ pub enum ValidationError {
     ZeroTimeout,
     /// Query result identity token must be non-empty.
     EmptyQueryResultId,
+    /// Continuation token must be non-empty when supplied.
+    EmptyContinuationToken,
+    /// Page size must be greater than zero when supplied.
+    ZeroPageSize,
     /// SavedQuery identity token must be non-empty.
     EmptySavedQueryId,
     /// SavedQuery name must be non-empty.
@@ -289,6 +293,10 @@ impl fmt::Display for ValidationError {
             Self::EmptyQueryResultId => {
                 formatter.write_str("query result identity must not be empty")
             }
+            Self::EmptyContinuationToken => {
+                formatter.write_str("continuation token must not be empty")
+            }
+            Self::ZeroPageSize => formatter.write_str("page size must be greater than zero"),
             Self::EmptySavedQueryId => {
                 formatter.write_str("saved query identity must not be empty")
             }
