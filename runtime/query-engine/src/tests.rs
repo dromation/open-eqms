@@ -70,6 +70,56 @@ impl SyntheticSource {
     }
 }
 
+struct FailingSource {
+    source: QuerySourceRef,
+    capabilities: SourceCapabilities,
+    schema: QuerySchema,
+    boundary: ConsistencyBoundary,
+    message: String,
+}
+
+impl FailingSource {
+    fn new(source: QuerySourceRef, message: impl Into<String>) -> Self {
+        Self {
+            source,
+            capabilities: SourceCapabilities::all(),
+            schema: schema(),
+            boundary: boundary(),
+            message: message.into(),
+        }
+    }
+}
+
+impl QuerySourceProvider for FailingSource {
+    fn source_ref(&self) -> &QuerySourceRef {
+        &self.source
+    }
+
+    fn capabilities(&self) -> SourceCapabilities {
+        self.capabilities
+    }
+
+    fn describe_schema(&self) -> QueryEngineResult<QuerySchema> {
+        Ok(self.schema.clone())
+    }
+}
+
+impl ExecutableQuerySourceProvider for FailingSource {
+    fn consistency_boundary(&self) -> QueryEngineResult<ConsistencyBoundary> {
+        Ok(self.boundary.clone())
+    }
+
+    fn read_records(
+        &self,
+        _cancellation: &CancellationState,
+    ) -> QueryEngineResult<Vec<QueryRecord>> {
+        Err(QueryEngineError::SourceUnavailable {
+            source: self.source.clone(),
+            message: self.message.clone(),
+        })
+    }
+}
+
 impl QuerySourceProvider for SyntheticSource {
     fn source_ref(&self) -> &QuerySourceRef {
         &self.source
@@ -201,8 +251,17 @@ fn boundary() -> ConsistencyBoundary {
 }
 
 fn record(record_id: &str, status: &str, score: f64) -> QueryRecord {
+    record_for_source(source_ref(), record_id, status, score)
+}
+
+fn record_for_source(
+    source: QuerySourceRef,
+    record_id: &str,
+    status: &str,
+    score: f64,
+) -> QueryRecord {
     QueryRecord::source_fact(
-        source_ref(),
+        source,
         "synthetic-record",
         record_id,
         StableOrderingKey::new(vec![record_id.to_owned()]),
@@ -221,6 +280,30 @@ fn record(record_id: &str, status: &str, score: f64) -> QueryRecord {
     .with_permission_scope("scope:synthetic")
     .with_source_version(Version::new(2))
     .with_integrity(format!("integrity-{record_id}"))
+}
+
+fn query_for_source(source: QuerySourceRef) -> QueryDefinition {
+    QueryDefinition::new(
+        source,
+        TemporalScope::Current,
+        None,
+        PartialResultPolicy::RejectPartial,
+        PresentationType::RecordSet,
+    )
+}
+
+fn inquiry_branch(
+    branch_id: &str,
+    source: QuerySourceRef,
+    result_id: &str,
+) -> InquiryBranchDefinition {
+    InquiryBranchDefinition::new(
+        InquiryBranchId::new(branch_id),
+        InquiryId::new("inquiry-001"),
+        format!("investigate {branch_id}"),
+        query_for_source(source),
+        QueryResultId::new(result_id),
+    )
 }
 
 fn saved_query_definition() -> SavedQueryDefinition {
@@ -1303,6 +1386,288 @@ fn zero_execution_controls_are_malformed_query_values() {
             failure: ValidationError::ZeroTimeout
         })
     ));
+}
+
+#[test]
+fn inquiry_validation_enforces_branch_bounds_and_identity() {
+    let source = source_ref();
+    let empty = InquiryExecutionRequest::new(
+        InquiryId::new("inquiry-001"),
+        ContextPackageId::new("context-package-001"),
+        CallerPermissionContext::new("caller-context"),
+        Vec::new(),
+        InquiryExecutionPolicy::linear(1, 1),
+        PartialResultPolicy::RejectPartial,
+    );
+    assert!(matches!(
+        validate_inquiry_execution_request(&empty),
+        Err(QueryEngineError::MalformedQuery {
+            failure: ValidationError::EmptyInquiryBranches
+        })
+    ));
+
+    let duplicate = InquiryExecutionRequest::new(
+        InquiryId::new("inquiry-001"),
+        ContextPackageId::new("context-package-001"),
+        CallerPermissionContext::new("caller-context"),
+        vec![
+            inquiry_branch("branch-a", source.clone(), "result-a"),
+            inquiry_branch("branch-a", source.clone(), "result-b"),
+        ],
+        InquiryExecutionPolicy::parallel_independent(2, 1),
+        PartialResultPolicy::RejectPartial,
+    );
+    assert!(matches!(
+        validate_inquiry_execution_request(&duplicate),
+        Err(QueryEngineError::MalformedQuery {
+            failure: ValidationError::DuplicateInquiryBranchId
+        })
+    ));
+
+    let too_deep = InquiryExecutionRequest::new(
+        InquiryId::new("inquiry-001"),
+        ContextPackageId::new("context-package-001"),
+        CallerPermissionContext::new("caller-context"),
+        vec![inquiry_branch("branch-a", source, "result-a").with_branch_depth(3)],
+        InquiryExecutionPolicy::parallel_independent(1, 2),
+        PartialResultPolicy::RejectPartial,
+    );
+    assert!(matches!(
+        validate_inquiry_execution_request(&too_deep),
+        Err(QueryEngineError::MalformedQuery {
+            failure: ValidationError::InquiryBranchDepthLimitExceeded
+        })
+    ));
+}
+
+#[test]
+fn cooperative_inquiry_fails_explicitly_when_fabric_or_mode_is_unavailable() {
+    let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![record(
+        "record-001",
+        "active",
+        1.0,
+    )]);
+    let cooperative_branch =
+        inquiry_branch("branch-a", source_ref(), "result-a").requiring_evidence_exchange();
+    let disabled_fabric = InquiryExecutionRequest::new(
+        InquiryId::new("inquiry-001"),
+        ContextPackageId::new("context-package-001"),
+        CallerPermissionContext::new("caller-context"),
+        vec![cooperative_branch.clone()],
+        InquiryExecutionPolicy::linear(1, 1),
+        PartialResultPolicy::RejectPartial,
+    );
+    assert!(matches!(
+        QueryEngine::new().execute_parallel_inquiry(
+            &[&source],
+            &SyntheticAuthorization::default(),
+            disabled_fabric,
+        ),
+        Err(QueryEngineError::ExecutionStrategyUnavailable { reason })
+            if reason == "cooperative inquiry requires the Parallel Inquiry Fabric"
+    ));
+
+    let independent_mode = InquiryExecutionRequest::new(
+        InquiryId::new("inquiry-001"),
+        ContextPackageId::new("context-package-001"),
+        CallerPermissionContext::new("caller-context"),
+        vec![cooperative_branch],
+        InquiryExecutionPolicy::parallel_independent(1, 1),
+        PartialResultPolicy::RejectPartial,
+    );
+    assert!(matches!(
+        QueryEngine::new().execute_parallel_inquiry(
+            &[&source],
+            &SyntheticAuthorization::default(),
+            independent_mode,
+        ),
+        Err(QueryEngineError::ExecutionStrategyUnavailable { reason })
+            if reason == "cooperative inquiry requires cooperative parallel execution"
+    ));
+}
+
+#[test]
+fn inquiry_execution_is_deterministic_and_deduplicates_evidence_by_provenance() {
+    let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![record(
+        "record-001",
+        "active",
+        1.0,
+    )]);
+    let branch_a = inquiry_branch("branch-a", source_ref(), "result-a");
+    let branch_b = inquiry_branch("branch-b", source_ref(), "result-b");
+    let first_request = InquiryExecutionRequest::new(
+        InquiryId::new("inquiry-001"),
+        ContextPackageId::new("context-package-001"),
+        CallerPermissionContext::new("caller-context"),
+        vec![branch_b.clone(), branch_a.clone()],
+        InquiryExecutionPolicy::parallel_independent(2, 1),
+        PartialResultPolicy::RejectPartial,
+    );
+    let second_request = InquiryExecutionRequest::new(
+        InquiryId::new("inquiry-001"),
+        ContextPackageId::new("context-package-001"),
+        CallerPermissionContext::new("caller-context"),
+        vec![branch_a, branch_b],
+        InquiryExecutionPolicy::parallel_independent(2, 1),
+        PartialResultPolicy::RejectPartial,
+    );
+
+    let first = QueryEngine::new()
+        .execute_parallel_inquiry(
+            &[&source, &source],
+            &SyntheticAuthorization::default(),
+            first_request,
+        )
+        .unwrap();
+    let second = QueryEngine::new()
+        .execute_parallel_inquiry(
+            &[&source, &source],
+            &SyntheticAuthorization::default(),
+            second_request,
+        )
+        .unwrap();
+
+    assert_eq!(first, second);
+    assert_eq!(
+        InquiryExecutionMode::ParallelIndependent,
+        first.execution_mode
+    );
+    assert_eq!(QueryCompleteness::Complete, first.completeness);
+    assert_eq!(1, first.evidence.len());
+    assert_eq!(
+        BTreeSet::from([
+            InquiryBranchId::new("branch-a"),
+            InquiryBranchId::new("branch-b")
+        ]),
+        first.evidence[0].producing_branch_ids
+    );
+    assert!(first.conflicts.is_empty());
+}
+
+#[test]
+fn inquiry_fusion_preserves_conflicting_evidence_without_reclassification() {
+    let source_a = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![record(
+        "record-001",
+        "active",
+        1.0,
+    )
+    .with_integrity("integrity-a")]);
+    let source_b = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![record(
+        "record-001",
+        "inactive",
+        2.0,
+    )
+    .with_integrity("integrity-b")
+    .with_classification(ResultClassification::StatisticalCorrelation)]);
+    let request = InquiryExecutionRequest::new(
+        InquiryId::new("inquiry-001"),
+        ContextPackageId::new("context-package-001"),
+        CallerPermissionContext::new("caller-context"),
+        vec![
+            inquiry_branch("branch-a", source_ref(), "result-a"),
+            inquiry_branch("branch-b", source_ref(), "result-b"),
+        ],
+        InquiryExecutionPolicy::cooperative_parallel(2, 1),
+        PartialResultPolicy::RejectPartial,
+    );
+
+    let result = QueryEngine::new()
+        .execute_parallel_inquiry(
+            &[&source_a, &source_b],
+            &SyntheticAuthorization::default(),
+            request,
+        )
+        .unwrap();
+    let classifications = result
+        .evidence
+        .iter()
+        .map(|evidence| evidence.item.classification)
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(2, result.evidence.len());
+    assert_eq!(1, result.conflicts.len());
+    assert_eq!(
+        BTreeSet::from([
+            ResultClassification::SourceFact,
+            ResultClassification::StatisticalCorrelation
+        ]),
+        classifications
+    );
+}
+
+#[test]
+fn inquiry_branches_keep_permission_isolation_before_fusion() {
+    let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![
+        record("record-001", "active", 1.0),
+        record("record-002", "active", 2.0),
+    ]);
+    let authorization = SyntheticAuthorization::default()
+        .with_decision("record-002", AuthorizationEffect::HiddenDeny);
+    let request = InquiryExecutionRequest::new(
+        InquiryId::new("inquiry-001"),
+        ContextPackageId::new("context-package-001"),
+        CallerPermissionContext::new("caller-context"),
+        vec![inquiry_branch("branch-a", source_ref(), "result-a")],
+        InquiryExecutionPolicy::parallel_independent(1, 1),
+        PartialResultPolicy::RejectPartial,
+    );
+
+    let result = QueryEngine::new()
+        .execute_parallel_inquiry(&[&source], &authorization, request)
+        .unwrap();
+    let evidence_ids = result
+        .evidence
+        .iter()
+        .flat_map(|evidence| evidence.item.provenance.source_record_ids.iter().cloned())
+        .collect::<Vec<_>>();
+
+    assert_eq!(authorization.calls(), ["record-001", "record-002"]);
+    assert_eq!(evidence_ids, ["record-001"]);
+}
+
+#[test]
+fn inquiry_reports_incomplete_branches_without_false_completion() {
+    let source = SyntheticSource::new(SourceCapabilities::all()).with_records(vec![record(
+        "record-001",
+        "active",
+        1.0,
+    )]);
+    let failing = FailingSource::new(source_ref(), "maintenance source offline");
+    let request = InquiryExecutionRequest::new(
+        InquiryId::new("inquiry-001"),
+        ContextPackageId::new("context-package-001"),
+        CallerPermissionContext::new("caller-context"),
+        vec![
+            inquiry_branch("branch-a", source_ref(), "result-a"),
+            inquiry_branch("branch-b", source_ref(), "result-b"),
+        ],
+        InquiryExecutionPolicy::parallel_independent(2, 1),
+        PartialResultPolicy::AllowIncomplete,
+    );
+
+    let result = QueryEngine::new()
+        .execute_parallel_inquiry(
+            &[&source, &failing],
+            &SyntheticAuthorization::default(),
+            request,
+        )
+        .unwrap();
+
+    assert_eq!(
+        QueryCompleteness::Incomplete {
+            reason: "one-or-more-inquiry-branches-incomplete".to_owned()
+        },
+        result.completeness
+    );
+    assert!(matches!(
+        result.branch_reports[0].status,
+        InquiryBranchStatus::Completed
+    ));
+    assert!(matches!(
+        result.branch_reports[1].status,
+        InquiryBranchStatus::Unavailable { ref reason } if reason == "maintenance source offline"
+    ));
+    assert_eq!(1, result.evidence.len());
 }
 
 #[test]

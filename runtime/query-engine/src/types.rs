@@ -762,6 +762,299 @@ pub struct ContextPackage {
     pub query_result: QueryResult,
 }
 
+/// Opaque identity for one bounded inquiry execution.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct InquiryId(String);
+
+impl InquiryId {
+    /// Creates an inquiry identity from a caller-supplied opaque token.
+    pub fn new(token: impl Into<String>) -> Self {
+        Self(token.into())
+    }
+
+    /// Returns the opaque inquiry identity token.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Reports whether the inquiry identity token is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl std::fmt::Display for InquiryId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Opaque identity for one branch inside a bounded inquiry.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct InquiryBranchId(String);
+
+impl InquiryBranchId {
+    /// Creates an inquiry branch identity from a caller-supplied opaque token.
+    pub fn new(token: impl Into<String>) -> Self {
+        Self(token.into())
+    }
+
+    /// Returns the opaque inquiry branch identity token.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Reports whether the branch identity token is empty.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl std::fmt::Display for InquiryBranchId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Local execution strategy selected for one bounded inquiry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum InquiryExecutionMode {
+    /// Execute branches deterministically without parallel evidence exchange.
+    Linear,
+    /// Execute independent branches without cooperative evidence exchange.
+    ParallelIndependent,
+    /// Execute branches with inquiry-scoped cooperative evidence exchange enabled.
+    CooperativeParallel,
+}
+
+/// Execution policy for one bounded inquiry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InquiryExecutionPolicy {
+    /// Whether the local Parallel Inquiry Fabric is enabled for this request.
+    pub parallel_fabric_enabled: bool,
+    /// Caller-requested execution mode.
+    pub preferred_mode: InquiryExecutionMode,
+    /// Maximum number of branches permitted for this inquiry.
+    pub max_branch_count: usize,
+    /// Maximum branch depth permitted for this inquiry.
+    pub max_branch_depth: usize,
+}
+
+impl InquiryExecutionPolicy {
+    /// Creates a deterministic linear policy with bounded branch count and depth.
+    pub const fn linear(max_branch_count: usize, max_branch_depth: usize) -> Self {
+        Self {
+            parallel_fabric_enabled: false,
+            preferred_mode: InquiryExecutionMode::Linear,
+            max_branch_count,
+            max_branch_depth,
+        }
+    }
+
+    /// Creates a policy allowing independent local branch execution.
+    pub const fn parallel_independent(max_branch_count: usize, max_branch_depth: usize) -> Self {
+        Self {
+            parallel_fabric_enabled: true,
+            preferred_mode: InquiryExecutionMode::ParallelIndependent,
+            max_branch_count,
+            max_branch_depth,
+        }
+    }
+
+    /// Creates a policy allowing cooperative local evidence exchange.
+    pub const fn cooperative_parallel(max_branch_count: usize, max_branch_depth: usize) -> Self {
+        Self {
+            parallel_fabric_enabled: true,
+            preferred_mode: InquiryExecutionMode::CooperativeParallel,
+            max_branch_count,
+            max_branch_depth,
+        }
+    }
+}
+
+/// Structured branch definition for the Parallel Inquiry Fabric.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InquiryBranchDefinition {
+    /// Branch identity unique inside the parent inquiry.
+    pub branch_id: InquiryBranchId,
+    /// Parent inquiry identity repeated for explicit traceability.
+    pub parent_inquiry_id: InquiryId,
+    /// Human-readable branch purpose.
+    pub purpose: String,
+    /// Structured query executed by this branch.
+    pub query: QueryDefinition,
+    /// Caller-supplied result identity for this branch execution.
+    pub result_id: QueryResultId,
+    /// Explicit finite branch depth.
+    pub branch_depth: usize,
+    /// Whether this branch requires cooperative evidence exchange semantics.
+    pub requires_evidence_exchange: bool,
+    /// Optional evidence requirement tokens declared by the branch.
+    pub evidence_requirements: Vec<String>,
+}
+
+impl InquiryBranchDefinition {
+    /// Creates a branch definition with finite depth one and no exchange requirement.
+    pub fn new(
+        branch_id: InquiryBranchId,
+        parent_inquiry_id: InquiryId,
+        purpose: impl Into<String>,
+        query: QueryDefinition,
+        result_id: QueryResultId,
+    ) -> Self {
+        Self {
+            branch_id,
+            parent_inquiry_id,
+            purpose: purpose.into(),
+            query,
+            result_id,
+            branch_depth: 1,
+            requires_evidence_exchange: false,
+            evidence_requirements: Vec::new(),
+        }
+    }
+
+    /// Returns a copy with the branch depth replaced.
+    pub fn with_branch_depth(mut self, branch_depth: usize) -> Self {
+        self.branch_depth = branch_depth;
+        self
+    }
+
+    /// Returns a copy requiring cooperative evidence exchange semantics.
+    pub fn requiring_evidence_exchange(mut self) -> Self {
+        self.requires_evidence_exchange = true;
+        self
+    }
+
+    /// Returns a copy with evidence requirement tokens replaced.
+    pub fn with_evidence_requirements(mut self, evidence_requirements: Vec<String>) -> Self {
+        self.evidence_requirements = evidence_requirements;
+        self
+    }
+}
+
+/// Request to execute one bounded inquiry over structured branches.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InquiryExecutionRequest {
+    /// Inquiry identity supplied by the caller for deterministic replay.
+    pub inquiry_id: InquiryId,
+    /// Context Package identity associated with the completed inquiry evidence set.
+    pub context_package_id: ContextPackageId,
+    /// Opaque caller/permission context supplied by Security.
+    pub caller_context: CallerPermissionContext,
+    /// Structured branch definitions for this inquiry.
+    pub branches: Vec<InquiryBranchDefinition>,
+    /// Execution policy for local strategy selection and bounds.
+    pub policy: InquiryExecutionPolicy,
+    /// Whether an incomplete branch result is acceptable to the caller.
+    pub partial_result_policy: PartialResultPolicy,
+}
+
+impl InquiryExecutionRequest {
+    /// Creates a bounded inquiry request.
+    pub fn new(
+        inquiry_id: InquiryId,
+        context_package_id: ContextPackageId,
+        caller_context: CallerPermissionContext,
+        branches: Vec<InquiryBranchDefinition>,
+        policy: InquiryExecutionPolicy,
+        partial_result_policy: PartialResultPolicy,
+    ) -> Self {
+        Self {
+            inquiry_id,
+            context_package_id,
+            caller_context,
+            branches,
+            policy,
+            partial_result_policy,
+        }
+    }
+}
+
+/// Completion state for one inquiry branch.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InquiryBranchStatus {
+    /// Branch completed and contributed zero or more authorized evidence items.
+    Completed,
+    /// Branch failed with a structured error reason.
+    Failed {
+        /// Machine-readable failure reason.
+        reason: String,
+    },
+    /// Branch source or strategy was unavailable.
+    Unavailable {
+        /// Machine-readable unavailability reason.
+        reason: String,
+    },
+    /// Branch was cancelled before completion.
+    Cancelled,
+    /// Branch timed out before completion.
+    TimedOut {
+        /// Machine-readable timeout reason.
+        reason: String,
+    },
+}
+
+/// Execution report for one inquiry branch.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InquiryBranchReport {
+    /// Branch identity.
+    pub branch_id: InquiryBranchId,
+    /// Branch completion status.
+    pub status: InquiryBranchStatus,
+    /// Result identity used by a completed branch.
+    pub result_id: Option<QueryResultId>,
+    /// Number of visible evidence items contributed by this branch.
+    pub item_count: usize,
+}
+
+/// Evidence item published into one inquiry-scoped evidence set.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InquiryEvidence {
+    /// Branch identities that produced this exact evidence.
+    pub producing_branch_ids: BTreeSet<InquiryBranchId>,
+    /// Normalized result item retained with provenance, classification, and permissions.
+    pub item: QueryResultItem,
+    /// Opaque deterministic integrity identifier for this evidence item.
+    pub integrity_identifier: String,
+}
+
+/// Preserved contradiction between two evidence items.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EvidenceConflict {
+    /// Integrity identifier for the first conflicting evidence item.
+    pub first_integrity_identifier: String,
+    /// Integrity identifier for the second conflicting evidence item.
+    pub second_integrity_identifier: String,
+    /// Machine-readable conflict reason.
+    pub reason: String,
+}
+
+/// Result of one bounded Parallel Inquiry Fabric execution.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InquiryResult {
+    /// Inquiry identity.
+    pub inquiry_id: InquiryId,
+    /// Inquiry result version.
+    pub version: Version,
+    /// Context Package identity associated with the inquiry evidence set.
+    pub context_package_id: ContextPackageId,
+    /// Opaque caller/permission context used for every branch.
+    pub caller_context: CallerPermissionContext,
+    /// Actual local execution mode selected for this inquiry.
+    pub execution_mode: InquiryExecutionMode,
+    /// Consistency boundary shared by completed branches.
+    pub consistency_boundary: ConsistencyBoundary,
+    /// Deterministically fused evidence items.
+    pub evidence: Vec<InquiryEvidence>,
+    /// Completion report for every branch.
+    pub branch_reports: Vec<InquiryBranchReport>,
+    /// Preserved evidence conflicts.
+    pub conflicts: Vec<EvidenceConflict>,
+    /// Completeness state of the inquiry result.
+    pub completeness: QueryCompleteness,
+}
+
 impl QuerySchema {
     /// Creates a schema description from field kinds.
     pub fn new(fields: BTreeMap<String, PropertyValueKind>) -> Self {

@@ -12,6 +12,6 @@ Current approved crates:
 - `runtime/object-runtime` — SPEC-001 Object Runtime.
 - `runtime/event-engine` — SPEC-002 Event Engine.
 - `runtime/transaction-engine` — SPEC-003 Transaction Engine.
-- `runtime/query-engine` — SPEC-004 Query Engine (finite one-shot execution over read-only `QuerySource` providers, with validation, authorization filtering, consistency-boundary recording, provenance, classification, projection, sorting, aggregation, deterministic continuation tokens, SavedQuery catalog registration/replay, bounded Context Package assembly, limits, and cancellation; no concrete engine adapters, Security implementation, concrete SavedQuery persistence, richer multi-source Context Package population, or parallel execution yet).
+- `runtime/query-engine` — SPEC-004 Query Engine (finite one-shot execution over read-only `QuerySource` providers, with validation, authorization filtering, consistency-boundary recording, provenance, classification, projection, sorting, aggregation, deterministic continuation tokens, SavedQuery catalog registration/replay, bounded Context Package assembly, local bounded Parallel Inquiry Fabric execution, limits, and cancellation; no concrete engine adapters, Security implementation, concrete SavedQuery persistence, richer multi-source Context Package population, or distributed inquiry execution yet).
 
 The Runtime must preserve deterministic behavior, offline-first operation, auditability, immutable facts, localization, and the Runtime / Content Package / Plugin boundary.

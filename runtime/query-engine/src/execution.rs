@@ -19,14 +19,17 @@ use crate::types::{
     saved_query_authorization_target, AggregationFunction, AggregationSpec, AuthorizationEffect,
     AuthorizationProvider, AuthorizationRequest, AuthorizationTarget, CallerPermissionContext,
     ConsistencyBoundary, ConsistencySlot, ContextPackage, ContextPackageRequest, ContinuationToken,
-    Pagination, PartialResultPolicy, PermissionAction, Predicate, Projection, PropertyValue,
-    QueryCompleteness, QueryDefinition, QueryExecutionRequest, QueryRecord, QueryResult,
-    QueryResultItem, ResultClassification, ResultProvenance, SavedQueryDefinition,
-    SavedQueryExecutionRequest, SortDirection, SortSpec, StableOrderingKey, Version,
+    EvidenceConflict, InquiryBranchId, InquiryBranchReport, InquiryBranchStatus, InquiryEvidence,
+    InquiryExecutionMode, InquiryExecutionRequest, Pagination, PartialResultPolicy,
+    PermissionAction, Predicate, Projection, PropertyValue, QueryCompleteness, QueryDefinition,
+    QueryExecutionRequest, QueryRecord, QueryResult, QueryResultItem, ResultClassification,
+    ResultProvenance, SavedQueryDefinition, SavedQueryExecutionRequest, SortDirection, SortSpec,
+    StableOrderingKey, Version,
 };
 use crate::validation::{
-    validate_context_package_request, validate_query_execution_request,
-    validate_query_record_against_schema, validate_saved_query_definition,
+    validate_context_package_request, validate_inquiry_execution_request,
+    validate_query_execution_request, validate_query_record_against_schema,
+    validate_saved_query_definition,
 };
 
 /// SPEC-004 Query Engine facade for finite one-shot execution.
@@ -47,7 +50,7 @@ impl QueryEngine {
         request: QueryExecutionRequest,
     ) -> QueryEngineResult<QueryResult>
     where
-        P: ExecutableQuerySourceProvider,
+        P: ExecutableQuerySourceProvider + ?Sized,
         A: AuthorizationProvider,
         A::Error: fmt::Display,
     {
@@ -69,7 +72,7 @@ impl QueryEngine {
         cancellation: &CancellationState,
     ) -> QueryEngineResult<QueryResult>
     where
-        P: ExecutableQuerySourceProvider,
+        P: ExecutableQuerySourceProvider + ?Sized,
         A: AuthorizationProvider,
         A::Error: fmt::Display,
     {
@@ -167,7 +170,7 @@ impl QueryEngine {
     where
         C: SavedQueryCatalog,
         C::Error: fmt::Display,
-        P: ExecutableQuerySourceProvider,
+        P: ExecutableQuerySourceProvider + ?Sized,
         A: AuthorizationProvider,
         A::Error: fmt::Display,
     {
@@ -211,7 +214,7 @@ impl QueryEngine {
         request: ContextPackageRequest,
     ) -> QueryEngineResult<ContextPackage>
     where
-        P: ExecutableQuerySourceProvider,
+        P: ExecutableQuerySourceProvider + ?Sized,
         A: AuthorizationProvider,
         A::Error: fmt::Display,
     {
@@ -236,6 +239,315 @@ impl QueryEngine {
             query_result: result,
         })
     }
+
+    /// Executes one bounded local inquiry over structured branch query operations.
+    pub fn execute_parallel_inquiry<A>(
+        &self,
+        providers: &[&dyn ExecutableQuerySourceProvider],
+        authorization_provider: &A,
+        request: InquiryExecutionRequest,
+    ) -> QueryEngineResult<crate::types::InquiryResult>
+    where
+        A: AuthorizationProvider,
+        A::Error: fmt::Display,
+    {
+        let cancellation = CancellationState::new();
+        self.execute_parallel_inquiry_with_cancellation(
+            providers,
+            authorization_provider,
+            request,
+            &cancellation,
+        )
+    }
+
+    /// Executes one bounded local inquiry while honoring caller-visible cancellation.
+    pub fn execute_parallel_inquiry_with_cancellation<A>(
+        &self,
+        providers: &[&dyn ExecutableQuerySourceProvider],
+        authorization_provider: &A,
+        request: InquiryExecutionRequest,
+        cancellation: &CancellationState,
+    ) -> QueryEngineResult<crate::types::InquiryResult>
+    where
+        A: AuthorizationProvider,
+        A::Error: fmt::Display,
+    {
+        validate_inquiry_execution_request(&request)?;
+        if providers.len() != request.branches.len() {
+            return Err(crate::errors::malformed_query(
+                crate::errors::ValidationError::InquiryBranchProviderMismatch,
+            ));
+        }
+
+        let execution_mode = select_inquiry_execution_mode(&request)?;
+        let mut branch_executions = request
+            .branches
+            .iter()
+            .cloned()
+            .zip(providers.iter().copied())
+            .collect::<Vec<_>>();
+        branch_executions.sort_by(|(left, _), (right, _)| left.branch_id.cmp(&right.branch_id));
+
+        let mut branch_reports = Vec::new();
+        let mut completed_results = Vec::new();
+        for (branch, provider) in branch_executions {
+            let branch_request = QueryExecutionRequest::new(
+                branch.query.clone(),
+                request.caller_context.clone(),
+                branch.result_id.clone(),
+            );
+            match self.execute_one_shot_with_cancellation(
+                provider,
+                authorization_provider,
+                branch_request,
+                cancellation,
+            ) {
+                Ok(result) => {
+                    let item_count = result.items.len();
+                    if matches!(
+                        request.partial_result_policy,
+                        PartialResultPolicy::RejectPartial
+                    ) && !matches!(result.completeness, QueryCompleteness::Complete)
+                    {
+                        return Err(QueryEngineError::IncompleteExecution {
+                            reason: format!(
+                                "inquiry branch {} returned an incomplete result",
+                                branch.branch_id.as_str()
+                            ),
+                        });
+                    }
+                    branch_reports.push(InquiryBranchReport {
+                        branch_id: branch.branch_id.clone(),
+                        status: InquiryBranchStatus::Completed,
+                        result_id: Some(branch.result_id),
+                        item_count,
+                    });
+                    completed_results.push((branch.branch_id, result));
+                }
+                Err(error) => {
+                    let status = branch_status_from_error(&error);
+                    if matches!(
+                        request.partial_result_policy,
+                        PartialResultPolicy::RejectPartial
+                    ) {
+                        return Err(QueryEngineError::IncompleteExecution {
+                            reason: format!(
+                                "inquiry branch {} did not complete: {}",
+                                branch.branch_id.as_str(),
+                                branch_status_reason(&status)
+                            ),
+                        });
+                    }
+                    branch_reports.push(InquiryBranchReport {
+                        branch_id: branch.branch_id,
+                        status,
+                        result_id: None,
+                        item_count: 0,
+                    });
+                }
+            }
+        }
+
+        let consistency_boundary = shared_inquiry_boundary(&completed_results)?;
+        let (evidence, conflicts) = fuse_inquiry_evidence(&completed_results);
+        let completeness = if branch_reports
+            .iter()
+            .all(|report| matches!(report.status, InquiryBranchStatus::Completed))
+            && completed_results
+                .iter()
+                .all(|(_, result)| matches!(result.completeness, QueryCompleteness::Complete))
+        {
+            QueryCompleteness::Complete
+        } else {
+            QueryCompleteness::Incomplete {
+                reason: "one-or-more-inquiry-branches-incomplete".to_owned(),
+            }
+        };
+
+        Ok(crate::types::InquiryResult {
+            inquiry_id: request.inquiry_id,
+            version: Version::initial(),
+            context_package_id: request.context_package_id,
+            caller_context: request.caller_context,
+            execution_mode,
+            consistency_boundary,
+            evidence,
+            branch_reports,
+            conflicts,
+            completeness,
+        })
+    }
+}
+
+fn select_inquiry_execution_mode(
+    request: &InquiryExecutionRequest,
+) -> QueryEngineResult<InquiryExecutionMode> {
+    let requires_cooperative_semantics = request
+        .branches
+        .iter()
+        .any(|branch| branch.requires_evidence_exchange);
+    if !request.policy.parallel_fabric_enabled {
+        if requires_cooperative_semantics {
+            return Err(QueryEngineError::ExecutionStrategyUnavailable {
+                reason: "cooperative inquiry requires the Parallel Inquiry Fabric".to_owned(),
+            });
+        }
+        return Ok(InquiryExecutionMode::Linear);
+    }
+    if requires_cooperative_semantics
+        && !matches!(
+            request.policy.preferred_mode,
+            InquiryExecutionMode::CooperativeParallel
+        )
+    {
+        return Err(QueryEngineError::ExecutionStrategyUnavailable {
+            reason: "cooperative inquiry requires cooperative parallel execution".to_owned(),
+        });
+    }
+
+    Ok(request.policy.preferred_mode)
+}
+
+fn branch_status_from_error(error: &QueryEngineError) -> InquiryBranchStatus {
+    match error {
+        QueryEngineError::Cancelled => InquiryBranchStatus::Cancelled,
+        QueryEngineError::Timeout { timeout } => InquiryBranchStatus::TimedOut {
+            reason: format!("{} ms", timeout.milliseconds()),
+        },
+        QueryEngineError::SourceUnavailable { message, .. } => InquiryBranchStatus::Unavailable {
+            reason: message.clone(),
+        },
+        QueryEngineError::ConsistencyBoundaryUnavailable { reason, .. } => {
+            InquiryBranchStatus::Unavailable {
+                reason: reason.canonical_token().to_owned(),
+            }
+        }
+        QueryEngineError::ExecutionStrategyUnavailable { reason } => {
+            InquiryBranchStatus::Unavailable {
+                reason: reason.clone(),
+            }
+        }
+        other => InquiryBranchStatus::Failed {
+            reason: other.to_string(),
+        },
+    }
+}
+
+fn branch_status_reason(status: &InquiryBranchStatus) -> String {
+    match status {
+        InquiryBranchStatus::Completed => "completed".to_owned(),
+        InquiryBranchStatus::Failed { reason }
+        | InquiryBranchStatus::Unavailable { reason }
+        | InquiryBranchStatus::TimedOut { reason } => reason.clone(),
+        InquiryBranchStatus::Cancelled => "cancelled".to_owned(),
+    }
+}
+
+fn shared_inquiry_boundary(
+    completed_results: &[(InquiryBranchId, QueryResult)],
+) -> QueryEngineResult<ConsistencyBoundary> {
+    let Some((_, first)) = completed_results.first() else {
+        return Ok(ConsistencyBoundary::empty());
+    };
+    for (branch_id, result) in completed_results.iter().skip(1) {
+        if result.consistency_boundary != first.consistency_boundary {
+            return Err(QueryEngineError::ExecutionStrategyUnavailable {
+                reason: format!(
+                    "inquiry branch {} resolved a different consistency boundary",
+                    branch_id.as_str()
+                ),
+            });
+        }
+    }
+    Ok(first.consistency_boundary.clone())
+}
+
+fn fuse_inquiry_evidence(
+    completed_results: &[(InquiryBranchId, QueryResult)],
+) -> (Vec<InquiryEvidence>, Vec<EvidenceConflict>) {
+    let mut evidence_by_key = BTreeMap::<String, InquiryEvidence>::new();
+    let mut key_by_scope = BTreeMap::<String, String>::new();
+    let mut conflicts = Vec::new();
+
+    for (branch_id, result) in completed_results {
+        for item in &result.items {
+            let integrity_identifier = evidence_integrity_identifier(item);
+            let evidence_key = evidence_key(item, &integrity_identifier);
+            let scope_key = evidence_scope_key(item);
+            if let Some(previous_key) = key_by_scope.get(&scope_key) {
+                if previous_key != &evidence_key {
+                    let previous_integrity = evidence_by_key
+                        .get(previous_key)
+                        .map(|evidence| evidence.integrity_identifier.clone())
+                        .unwrap_or_else(|| previous_key.clone());
+                    conflicts.push(EvidenceConflict {
+                        first_integrity_identifier: previous_integrity,
+                        second_integrity_identifier: integrity_identifier.clone(),
+                        reason: "evidence scope contains contradictory normalized content"
+                            .to_owned(),
+                    });
+                }
+            } else {
+                key_by_scope.insert(scope_key, evidence_key.clone());
+            }
+
+            evidence_by_key
+                .entry(evidence_key)
+                .and_modify(|evidence| {
+                    evidence.producing_branch_ids.insert(branch_id.clone());
+                })
+                .or_insert_with(|| InquiryEvidence {
+                    producing_branch_ids: BTreeSet::from([branch_id.clone()]),
+                    item: item.clone(),
+                    integrity_identifier,
+                });
+        }
+    }
+
+    (evidence_by_key.into_values().collect(), conflicts)
+}
+
+fn evidence_integrity_identifier(item: &QueryResultItem) -> String {
+    item.provenance
+        .integrity
+        .clone()
+        .unwrap_or_else(|| format!("derived-evidence:{}", evidence_scope_key(item)))
+}
+
+fn evidence_scope_key(item: &QueryResultItem) -> String {
+    format!(
+        "source={}|type={}|records={}",
+        encode_text_token(item.provenance.source.as_str()),
+        item.provenance
+            .source_record_type
+            .as_deref()
+            .map(encode_text_token)
+            .unwrap_or_else(|| "none".to_owned()),
+        item.provenance
+            .source_record_ids
+            .iter()
+            .map(|record_id| encode_text_token(record_id))
+            .collect::<Vec<_>>()
+            .join(",")
+    )
+}
+
+fn evidence_key(item: &QueryResultItem, integrity_identifier: &str) -> String {
+    let mut fields = Vec::new();
+    for (field, value) in &item.fields {
+        fields.push(format!(
+            "{}={}",
+            encode_text_token(field),
+            property_value_token(value)
+        ));
+    }
+    format!(
+        "{}|classification={:?}|integrity={}|fields={}",
+        evidence_scope_key(item),
+        item.classification,
+        encode_text_token(integrity_identifier),
+        fields.join(",")
+    )
 }
 
 fn paginate_items(

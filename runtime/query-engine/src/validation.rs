@@ -1,14 +1,16 @@
 //! Structural validation for query definitions.
 
+use std::collections::BTreeSet;
+
 use crate::errors::{
     invalid_field, invalid_source_record, malformed_query, QueryEngineResult, ValidationError,
 };
 use crate::limits::validate_execution_limits;
 use crate::types::{
-    AggregationFunction, AggregationSpec, ContextPackageRequest, GroupSpec, Predicate, Projection,
-    QueryDefinition, QueryExecutionRequest, QueryRecord, QuerySchema, QuerySourceRef,
-    SavedQueryDefinition, SortSpec, TemporalScope, TraversalSpec,
-    CURRENT_SAVED_QUERY_SCHEMA_VERSION,
+    AggregationFunction, AggregationSpec, ContextPackageRequest, GroupSpec,
+    InquiryExecutionRequest, Predicate, Projection, QueryDefinition, QueryExecutionRequest,
+    QueryRecord, QuerySchema, QuerySourceRef, SavedQueryDefinition, SortSpec, TemporalScope,
+    TraversalSpec, CURRENT_SAVED_QUERY_SCHEMA_VERSION,
 };
 
 /// Validates a query definition against local structural rules only.
@@ -188,6 +190,72 @@ pub fn validate_context_package_request(request: &ContextPackageRequest) -> Quer
         ));
     }
     validate_query_execution_request(&request.execution_request)
+}
+
+/// Validates a bounded inquiry request before any branch execution.
+pub fn validate_inquiry_execution_request(
+    request: &InquiryExecutionRequest,
+) -> QueryEngineResult<()> {
+    if request.inquiry_id.is_empty() {
+        return Err(malformed_query(ValidationError::EmptyInquiryId));
+    }
+    if request.context_package_id.is_empty() {
+        return Err(malformed_query(ValidationError::EmptyContextPackageId));
+    }
+    if request.branches.is_empty() {
+        return Err(malformed_query(ValidationError::EmptyInquiryBranches));
+    }
+    if request.policy.max_branch_count == 0 {
+        return Err(malformed_query(
+            ValidationError::ZeroInquiryBranchCountLimit,
+        ));
+    }
+    if request.policy.max_branch_depth == 0 {
+        return Err(malformed_query(
+            ValidationError::ZeroInquiryBranchDepthLimit,
+        ));
+    }
+    if request.branches.len() > request.policy.max_branch_count {
+        return Err(malformed_query(
+            ValidationError::InquiryBranchCountLimitExceeded,
+        ));
+    }
+
+    let mut branch_ids = BTreeSet::new();
+    for branch in &request.branches {
+        if branch.branch_id.is_empty() {
+            return Err(malformed_query(ValidationError::EmptyInquiryBranchId));
+        }
+        if !branch_ids.insert(branch.branch_id.clone()) {
+            return Err(malformed_query(ValidationError::DuplicateInquiryBranchId));
+        }
+        if branch.parent_inquiry_id != request.inquiry_id {
+            return Err(malformed_query(
+                ValidationError::InquiryBranchParentMismatch,
+            ));
+        }
+        if branch.purpose.is_empty() {
+            return Err(malformed_query(ValidationError::EmptyInquiryBranchPurpose));
+        }
+        if branch.result_id.is_empty() {
+            return Err(malformed_query(ValidationError::EmptyInquiryBranchResultId));
+        }
+        if branch.branch_depth == 0 {
+            return Err(malformed_query(ValidationError::ZeroInquiryBranchDepth));
+        }
+        if branch.branch_depth > request.policy.max_branch_depth {
+            return Err(malformed_query(
+                ValidationError::InquiryBranchDepthLimitExceeded,
+            ));
+        }
+        if branch.evidence_requirements.iter().any(String::is_empty) {
+            return Err(malformed_query(
+                ValidationError::EmptyInquiryEvidenceRequirement,
+            ));
+        }
+        validate_query_definition(&branch.query)?;
+    }
+    Ok(())
 }
 
 fn validate_temporal_scope(scope: &TemporalScope) -> QueryEngineResult<()> {

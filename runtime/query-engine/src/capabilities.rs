@@ -34,7 +34,7 @@ pub trait ExecutableQuerySourceProvider: QuerySourceProvider {
 }
 
 /// Validates that a query is structurally valid and supported by one declared source.
-pub fn validate_query_source_contract<P: QuerySourceProvider>(
+pub fn validate_query_source_contract<P: QuerySourceProvider + ?Sized>(
     provider: &P,
     query: &QueryDefinition,
 ) -> QueryEngineResult<()> {

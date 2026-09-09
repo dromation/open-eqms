@@ -253,6 +253,34 @@ pub enum ValidationError {
     ZeroContextPackageItemLimit,
     /// Context Package depth limit must be greater than zero.
     ZeroContextPackageDepthLimit,
+    /// Inquiry identity token must be non-empty.
+    EmptyInquiryId,
+    /// Inquiry must contain at least one branch.
+    EmptyInquiryBranches,
+    /// Inquiry branch identity token must be non-empty.
+    EmptyInquiryBranchId,
+    /// Inquiry branch parent identity must match the parent inquiry.
+    InquiryBranchParentMismatch,
+    /// Inquiry branch purpose token must be non-empty.
+    EmptyInquiryBranchPurpose,
+    /// Inquiry branch result identity token must be non-empty.
+    EmptyInquiryBranchResultId,
+    /// Inquiry branch depth must be greater than zero.
+    ZeroInquiryBranchDepth,
+    /// Inquiry branch depth exceeds the execution policy.
+    InquiryBranchDepthLimitExceeded,
+    /// Inquiry branch count limit must be greater than zero.
+    ZeroInquiryBranchCountLimit,
+    /// Inquiry branch depth limit must be greater than zero.
+    ZeroInquiryBranchDepthLimit,
+    /// Inquiry branch count exceeds the execution policy.
+    InquiryBranchCountLimitExceeded,
+    /// Inquiry branch identities must be unique inside one inquiry.
+    DuplicateInquiryBranchId,
+    /// Inquiry branch evidence requirement tokens must be non-empty.
+    EmptyInquiryEvidenceRequirement,
+    /// Inquiry provider bindings must match the branch definitions.
+    InquiryBranchProviderMismatch,
 }
 
 impl fmt::Display for ValidationError {
@@ -327,6 +355,46 @@ impl fmt::Display for ValidationError {
             }
             Self::ZeroContextPackageDepthLimit => {
                 formatter.write_str("context package depth limit must be greater than zero")
+            }
+            Self::EmptyInquiryId => formatter.write_str("inquiry identity must not be empty"),
+            Self::EmptyInquiryBranches => {
+                formatter.write_str("inquiry must contain at least one branch")
+            }
+            Self::EmptyInquiryBranchId => {
+                formatter.write_str("inquiry branch identity must not be empty")
+            }
+            Self::InquiryBranchParentMismatch => {
+                formatter.write_str("inquiry branch parent identity must match inquiry identity")
+            }
+            Self::EmptyInquiryBranchPurpose => {
+                formatter.write_str("inquiry branch purpose must not be empty")
+            }
+            Self::EmptyInquiryBranchResultId => {
+                formatter.write_str("inquiry branch result identity must not be empty")
+            }
+            Self::ZeroInquiryBranchDepth => {
+                formatter.write_str("inquiry branch depth must be greater than zero")
+            }
+            Self::InquiryBranchDepthLimitExceeded => {
+                formatter.write_str("inquiry branch depth exceeds execution policy")
+            }
+            Self::ZeroInquiryBranchCountLimit => {
+                formatter.write_str("inquiry branch count limit must be greater than zero")
+            }
+            Self::ZeroInquiryBranchDepthLimit => {
+                formatter.write_str("inquiry branch depth limit must be greater than zero")
+            }
+            Self::InquiryBranchCountLimitExceeded => {
+                formatter.write_str("inquiry branch count exceeds execution policy")
+            }
+            Self::DuplicateInquiryBranchId => {
+                formatter.write_str("inquiry branch identities must be unique")
+            }
+            Self::EmptyInquiryEvidenceRequirement => {
+                formatter.write_str("inquiry branch evidence requirement must not be empty")
+            }
+            Self::InquiryBranchProviderMismatch => {
+                formatter.write_str("inquiry provider bindings must match branch definitions")
             }
         }
     }
