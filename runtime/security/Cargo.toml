@@ -1,0 +1,13 @@
+[package]
+name = "open-eqms-security"
+version = "0.1.0"
+edition = "2021"
+description = "Open-EQMS Security minimal authorization provider for SPEC-007"
+license = "GPL-2.0-only"
+
+[lib]
+name = "open_eqms_security"
+path = "src/lib.rs"
+
+[dependencies]
+open-eqms-runtime-contracts = { path = "../runtime-contracts" }

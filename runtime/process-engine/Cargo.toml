@@ -1,0 +1,16 @@
+[package]
+name = "open-eqms-process-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Open-EQMS Process Engine V1 implementation for SPEC-006"
+license = "GPL-2.0-only"
+
+[lib]
+name = "open_eqms_process_engine"
+path = "src/lib.rs"
+
+[dependencies]
+open-eqms-event-engine = { path = "../event-engine" }
+open-eqms-object-runtime = { path = "../object-runtime" }
+open-eqms-runtime-contracts = { path = "../runtime-contracts" }
+open-eqms-transaction-engine = { path = "../transaction-engine" }

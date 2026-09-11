@@ -3,8 +3,10 @@ members = [
     "apps/open-eqms-demo",
     "runtime/event-engine",
     "runtime/object-runtime",
+    "runtime/process-engine",
     "runtime/query-engine",
     "runtime/runtime-contracts",
+    "runtime/security",
     "runtime/transaction-engine",
 ]
 resolver = "2"
